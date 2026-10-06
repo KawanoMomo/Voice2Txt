@@ -10,6 +10,8 @@ namespace Voice2Txt;
 /// 結果を &lt;out&gt;/result.json に書く。本物のマイク・クリップボード・キーボードフックは使わない。
 /// 台本のキーはキーボードフックと同じ判定(<see cref="TalkKeyFilter"/>)に通し、素通ししたキー・合成して送ったキーを結果に残す。
 /// 設定は台本の settings だけを使う(%APPDATA% の settings.json は読まない)。
+/// 貼り付け先の判定は仮の前面(<see cref="VirtualForeground"/>)で行うが、オーバーレイがフォーカスを奪っていないかは
+/// 本物の前面ウィンドウを一定間隔と状態が変わるたびに調べて結果に残す。
 /// </summary>
 internal sealed class VerifyHost : ApplicationContext
 {
@@ -29,6 +31,7 @@ internal sealed class VerifyHost : ApplicationContext
     private readonly Stopwatch _sw = Stopwatch.StartNew();
     private readonly TaskCompletionSource _modelReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _shotNo;
+    private readonly System.Windows.Forms.Timer _fgProbe = new() { Interval = 25 };
 
     public VerifyHost(string scenarioPath, string outDir)
     {
@@ -59,6 +62,8 @@ internal sealed class VerifyHost : ApplicationContext
             PttOptions.From(_settings));
         _ptt.OverlayChanged += v => _overlay.BeginInvoke(() => OnOverlay(v));
         _ptt.Finished += OnFinished;
+        _fgProbe.Tick += (_, _) => ProbeForeground();
+        _fgProbe.Start();
 
         _ = RunAsync();
     }
@@ -75,6 +80,7 @@ internal sealed class VerifyHost : ApplicationContext
             rec.Capture = _overlay.SaveScreenshot(Path.Combine(_shots, name));
             rec.Screenshot = "shots/" + name;
         }
+        rec.Foreground = ProbeForeground();
         lock (_result) _result.States.Add(rec);
         AppLog.Write($"state {v.Label} capture={rec.Capture}");
     }
@@ -97,6 +103,20 @@ internal sealed class VerifyHost : ApplicationContext
             case TalkKeySignal.TalkUp: _ptt.OnTalkKeyUp(); break;
             case TalkKeySignal.OtherKeyWhileTalk: _ptt.OnOtherKeyDown(); break;
         }
+    }
+
+    /// <summary>本物の前面ウィンドウを調べて数える(UI スレッド)。</summary>
+    private string ProbeForeground()
+    {
+        nint h = Native.GetForegroundWindow();
+        string who = h == _overlay.Handle ? "overlay" : h == _textForm.Handle ? "textbox" : "other";
+        lock (_result)
+        {
+            _result.ForegroundSamples++;
+            if (who == "overlay") _result.OverlayForegroundCount++;
+        }
+        if (who == "overlay") AppLog.Write("overlay-took-foreground");
+        return who;
     }
 
     private static string Safe(string s) => string.Concat(s.Select(c => Path.GetInvalidFileNameChars().Contains(c) || c == '+' ? '_' : c));
@@ -129,6 +149,7 @@ internal sealed class VerifyHost : ApplicationContext
         await Task.Delay(300);
         _overlay.Invoke(() =>
         {
+            _fgProbe.Stop();
             _result.Textbox = _textForm.Box.Text;
             _result.Clipboard = _clip.Text;
             _result.Runtime = _engine.Runtime;
