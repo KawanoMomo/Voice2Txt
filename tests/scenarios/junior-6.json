@@ -1,0 +1,26 @@
+{
+  "name": "junior-6",
+  "persona": "junior",
+  "step": 6,
+  "description": "無音(silence.wav、3 秒)でトークキーを押して離す。何も貼られず「音声が検出されませんでした」が出る",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "tests/fixtures/audio/silence.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 200 },
+    { "do": "release" },
+    { "do": "wait", "ms": 500 },
+    { "do": "waitIdle", "timeoutMs": 60000 }
+  ],
+  "expect": {
+    "deliveries": [],
+    "textbox": { "text": "" },
+    "states": ["録音中", "取り消し(無音)"],
+    "stateTexts": ["音声が検出されませんでした"],
+    "forbiddenStates": ["貼り付け完了", "退避"],
+    "cancellations": ["Silence"],
+    "screenshots": ["取り消し(無音)"]
+  }
+}
