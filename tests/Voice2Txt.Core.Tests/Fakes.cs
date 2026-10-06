@@ -38,10 +38,19 @@ internal sealed class FakeForeground : IForegroundWindow
     public nint Current() => Window;
 }
 
+/// <summary>FailTimes 回だけ(負なら常に)他アプリが開いたままのように投げる。</summary>
 internal sealed class FakeClipboard : IClipboard
 {
     public string? Text;
-    public void SetText(string text) => Text = text;
+    public int FailTimes;
+    public int Attempts;
+
+    public void SetText(string text)
+    {
+        int n = Interlocked.Increment(ref Attempts);
+        if (FailTimes < 0 || n <= FailTimes) throw new System.Runtime.InteropServices.ExternalException("クリップボードを開けません");
+        Text = text;
+    }
 }
 
 /// <summary>貼り付け先: Ctrl+V が来たら、その時点のクリップボードの中身を前面ウィンドウに貼ったことにする。</summary>

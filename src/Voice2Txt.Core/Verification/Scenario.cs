@@ -46,7 +46,7 @@ public sealed class Scenario
 /// 台本の 1 手。do は次のどれか:
 /// waitModel(モデルの用意を待つ)/ press(トークキーを押す。audio に音声ファイル)/ holdUntilAudioEnd(流し終わるまで押し続ける)/
 /// release(離す)/ key(押下中に別のキー key を押す)/ focus(前面を window = "textbox" か "other" に切り替える)/
-/// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)
+/// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)
 /// </summary>
 public sealed class ScenarioAction
 {

@@ -75,7 +75,7 @@ internal sealed class VerifyHost : ApplicationContext
         AppLog.Write(AppLog.Describe(r));
         lock (_result)
         {
-            if (r.Outcome == Outcome.Cancelled)
+            if (r.Outcome is Outcome.Cancelled or Outcome.Failed)
                 _result.Cancellations.Add(new CancelRecord { Seq = r.Seq, Reason = r.Reason.ToString(), HeldMs = r.HeldMs, Error = r.Error });
             else
                 _result.Deliveries.Add(new DeliveryRecord
@@ -156,6 +156,9 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 case "focus":
                     _fg.Focus(a.Window ?? "textbox");
+                    break;
+                case "lockClipboard":
+                    _clip.LockFor(a.Ms ?? 0);
                     break;
                 case "wait":
                     await Task.Delay(a.Ms ?? 0);
@@ -238,10 +241,20 @@ internal sealed class VirtualForeground(nint textbox) : IForegroundWindow
     public nint Current() => _current == "textbox" ? textbox : 1;
 }
 
+/// <summary>検証用のクリップボード。台本の lockClipboard の間は、他アプリが開いたままのように投げる。</summary>
 internal sealed class MemoryClipboard : IClipboard
 {
+    private long _lockedUntil;
     public string? Text { get; private set; }
-    public void SetText(string text) => Text = text;
+
+    public void LockFor(int ms) => Interlocked.Exchange(ref _lockedUntil, Environment.TickCount64 + ms);
+
+    public void SetText(string text)
+    {
+        if (Environment.TickCount64 < Interlocked.Read(ref _lockedUntil))
+            throw new System.Runtime.InteropServices.ExternalException("クリップボードを開けません(検証モードの lockClipboard)");
+        Text = text;
+    }
 }
 
 /// <summary>Ctrl+V の代わりに、クリップボードの中身を検証用のテキスト欄のカーソル位置へ貼る。</summary>
