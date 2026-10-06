@@ -1,24 +1,23 @@
 using System.Diagnostics;
+using Voice2Txt.Core;
 
 namespace Voice2Txt;
 
 /// <summary>
-/// トークキーの低レベルフック。トークキーは握りつぶし、操作中のアプリへ渡さない。
-/// 押下中に別のキーが押されたら、発話を取り消し、トークキーを修飾キーとして押されたことにして(合成した押下に続けて同じキーを送り)ショートカットを効かせる。
+/// トークキーの低レベルフック。判定は <see cref="TalkKeyFilter"/>(検証モードと共有)に委ね、ここは結果を Windows に返すだけ。
 /// フック内では重い処理をしない(呼び出し先はキューに積むだけ)。
 /// </summary>
 internal sealed class KeyboardHook : IDisposable
 {
-    private readonly ushort _talkVk;
+    private readonly TalkKeyFilter _filter;
     private readonly Native.LowLevelKeyboardProc _proc; // GC されないよう保持
     private nint _hook;
-    private bool _talkDown, _passThrough;
 
     public event Action? TalkDown, TalkUp, OtherKeyWhileTalk;
 
     public KeyboardHook(ushort talkVk)
     {
-        _talkVk = talkVk;
+        _filter = new TalkKeyFilter(talkVk);
         _proc = Callback;
         using var p = Process.GetCurrentProcess();
         _hook = Native.SetWindowsHookEx(Native.WH_KEYBOARD_LL, _proc, Native.GetModuleHandle(p.MainModule?.ModuleName), 0);
@@ -32,32 +31,18 @@ internal sealed class KeyboardHook : IDisposable
         if ((k.flags & Native.LLKHF_INJECTED) != 0) return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
         bool down = wParam is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN;
         bool up = wParam is Native.WM_KEYUP or Native.WM_SYSKEYUP;
+        if (!down && !up) return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
 
-        if (k.vkCode == _talkVk)
+        var v = _filter.OnKey((int)k.vkCode, down);
+        switch (v.Signal)
         {
-            if (down)
-            {
-                if (_passThrough) return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
-                if (!_talkDown) { _talkDown = true; TalkDown?.Invoke(); }
-                return 1; // 握りつぶす(リピートも)
-            }
-            if (up)
-            {
-                _talkDown = false;
-                if (_passThrough) { _passThrough = false; return Native.CallNextHookEx(_hook, nCode, wParam, lParam); }
-                TalkUp?.Invoke();
-                return 1;
-            }
+            case TalkKeySignal.TalkDown: TalkDown?.Invoke(); break;
+            case TalkKeySignal.TalkUp: TalkUp?.Invoke(); break;
+            case TalkKeySignal.OtherKeyWhileTalk: OtherKeyWhileTalk?.Invoke(); break;
         }
-        else if (down && _talkDown && !_passThrough)
-        {
-            // 修飾キーとして扱う: 発話を取り消し、トークキーの押下と今のキーを順に合成して送る
-            _passThrough = true;
-            OtherKeyWhileTalk?.Invoke();
-            Native.SendKeys(Native.Key(_talkVk, false), Native.Key((ushort)k.vkCode, false));
-            return 1;
-        }
-        return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
+        // 修飾キーとして扱う: トークキーの押下と今のキーを順に合成して送る
+        if (v.InjectDown.Length > 0) Native.SendKeys(v.InjectDown.Select(vk => Native.Key((ushort)vk, false)).ToArray());
+        return v.Swallow ? 1 : Native.CallNextHookEx(_hook, nCode, wParam, lParam);
     }
 
     public void Dispose()

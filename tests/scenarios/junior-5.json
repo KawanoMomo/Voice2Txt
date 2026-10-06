@@ -1,0 +1,36 @@
+{
+  "name": "junior-5",
+  "persona": "junior",
+  "step": 5,
+  "description": "設定でトークキーを右 Alt に変え、同じ 1 文を貼る。右 Ctrl を押しても録音されず(素通し)、右 Alt で貼れる。オーバーレイは「右Alt を離すと入力」",
+  "timeoutMs": 600000,
+  "settings": { "talkKey": "RMenu" },
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "key": "RControlKey", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "wait", "ms": 1000 },
+    { "do": "release", "key": "RControlKey" },
+    { "do": "wait", "ms": 500 },
+    { "do": "press", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 200 },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 }
+  ],
+  "expect": {
+    "deliveries": [
+      { "to": "textbox", "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 }
+    ],
+    "textbox": { "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 },
+    "states": ["準備中", "録音中", "処理中", "貼り付け完了"],
+    "stateTexts": ["右Alt を離すと入力"],
+    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
+    "cancellations": [],
+    "passedKeys": ["RControlKey down", "RControlKey up"],
+    "sentKeys": [],
+    "warnings": [],
+    "maxReleaseToDeliverMs": 3000,
+    "screenshots": ["録音中", "貼り付け完了"]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "primary-4",
+  "persona": "primary",
+  "step": 4,
+  "description": "ショートカット単体: 右 Ctrl を押したまま C を押して離す。録音されず取り消し、右 Ctrl+C が合成して送られ(コピーが効く)、何も貼られない",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "wait", "ms": 600 },
+    { "do": "key", "key": "C" },
+    { "do": "release" },
+    { "do": "wait", "ms": 1500 },
+    { "do": "waitIdle", "timeoutMs": 60000 }
+  ],
+  "expect": {
+    "deliveries": [],
+    "textbox": { "text": "" },
+    "forbiddenStates": ["処理中", "貼り付け完了", "退避"],
+    "cancellations": ["OtherKey"],
+    "sentKeys": ["RControlKey down", "C down"],
+    "passedKeys": ["C up", "RControlKey up"],
+    "warnings": []
+  }
+}

@@ -17,7 +17,7 @@
 ## 使い方
 - 起動するとタスクトレイに常駐する。初回はモデル(`large-v3-turbo`)を取得元からダウンロードし、ハッシュで検証してから読み込む(トレイのツールチップに進み具合)
 - トークキー(初期値 右 Ctrl)を押している間だけ録音し、離すと確定版を、押した時点の前面ウィンドウへ Ctrl+V で貼る。ウィンドウが変わっていたら貼らずにクリップボードに残す(退避。Ctrl+V で貼れる)。他のアプリがクリップボードを開いたままなら最大 3 秒粘り、それでも入らなければ「入力失敗」と出す(Ctrl+V では貼れない。ログに `reason=ClipboardBusy`)
-- 設定: `%APPDATA%\Voice2Txt\settings.json`(`talkKey`: トークキーの名前 例 `RControlKey` / `RMenu`、`model`、`minPressSeconds`、`silenceThreshold`)。トレイのメニュー「設定ファイルを開く」。変更は再起動で効く
+- 設定: `%APPDATA%\Voice2Txt\settings.json`(`talkKey`: トークキーの名前 例 `RControlKey` / `RMenu`、`model`、`minPressSeconds`、`silenceThreshold`)。トレイのメニュー「設定ファイルを開く」。変更は再起動で効く。`talkKey` が読めない名前(例 `RAlt`)なら右 Ctrl を使い、トレイの通知とログ(`talkkey-invalid`)で知らせる
 - 自動起動: トレイのメニュー「ログオン時に起動する」で切り替える(初期値オフ。設定の `autoStart` と HKCU の Run の値 `Voice2Txt` を一致させる。起動時にも合わせ直す)
 - モデル: `%APPDATA%\Voice2Txt\models\ggml-large-v3-turbo.bin`(手動で置いてもよい。ハッシュが合えば使う)
 - ログ: `%APPDATA%\Voice2Txt\logs\app.log`(時間・取り消しの理由などのメタ情報だけ。文字起こしの本文は書かない)
@@ -30,8 +30,11 @@
 - `shots/NN-{状態}.png` — 状態が変わるごとのオーバーレイのスクリーンショット
 - `verify.log`
 
-台本の手(`actions[].do`): `waitModel` / `press`(`audio`)/ `holdUntilAudioEnd` / `release` / `key`(押下中の別キー)/ `focus`(`window`: `textbox` か `other`)/ `wait`(`ms`)/ `waitIdle` / `lockClipboard`(`ms`: その間クリップボードを使えなくする。粘っても入らなければ状態「入力失敗」・取り消しの理由 `ClipboardBusy`)。
-期待(`expect`): `deliveries` / `textbox`(`text` と `minSimilarity`)/ `states` / `forbiddenStates` / `cancellations` / `maxReleaseToDeliverMs` / `screenshots`。
+台本の設定(`settings`): `talkKey` などを台本に書く(検証モードは `%APPDATA%` の settings.json を読まない)。例 `"settings": {"talkKey": "RMenu"}`。
+台本の手(`actions[].do`): `waitModel` / `press`(`audio`、`key`)/ `holdUntilAudioEnd` / `release`(`key`)/ `key`(`key` を押して離す。省略時 `C`)/ `focus`(`window`: `textbox` か `other`)/ `wait`(`ms`)/ `waitIdle` / `lockClipboard`(`ms`: その間クリップボードを使えなくする。粘っても入らなければ状態「入力失敗」・取り消しの理由 `ClipboardBusy`)。
+`key` は Keys の名前(`RControlKey` / `RMenu` / `C` など。省略時は設定のトークキー)。キーは本番のキーボードフックと同じ判定に通す: トークキーは握りつぶして録音、それ以外は素通し(録音しない)、トークキーの押下中に別キーを押すと取り消して「トークキー+そのキー」を合成して送る。
+結果の `passedKeys`(素通ししたキー。`"RControlKey down"` の形)・`sentKeys`(合成して送ったキー)・`warnings`(例: talkKey を読めない)に残る。
+期待(`expect`): `deliveries` / `textbox`(`text` と `minSimilarity`)/ `states` / `stateTexts`(オーバーレイの文言に含まれる文字列)/ `forbiddenStates` / `cancellations` / `passedKeys` / `sentKeys` / `warnings` / `maxReleaseToDeliverMs` / `screenshots`。
 
 全部の台本を回す: `dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios tests/scenarios --out <dir>`(`passed: 名前` / `failed: 名前` と理由、最後に `passed=N failed=M`、`<dir>/summary.json`)
 

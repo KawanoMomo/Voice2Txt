@@ -92,6 +92,12 @@ internal sealed class TrayApp : ApplicationContext
         _hook.TalkUp += () => _keys.Add(_ptt.OnTalkKeyUp);
         _hook.OtherKeyWhileTalk += () => _keys.Add(_ptt.OnOtherKeyDown);
 
+        if (TalkKeys.InvalidWarning(settings.TalkKey) is { } warn)
+        {
+            AppLog.Write($"talkkey-invalid name={settings.TalkKey} fallback={TalkKeys.Default}");
+            _tray.ShowBalloonTip(8000, "Voice2Txt", warn, ToolTipIcon.Warning);
+        }
+
         _ = LoadEngineAsync();
     }
 
@@ -157,8 +163,24 @@ internal sealed class DeferredTranscriber : ITranscriber, IDisposable
 
 internal static class TalkKeys
 {
-    public static Keys Parse(string name) =>
-        Enum.TryParse<Keys>(name, ignoreCase: true, out var k) && k != Keys.None ? k : Keys.RControlKey;
+    public const Keys Default = Keys.RControlKey;
+
+    /// <summary>単独のキーの名前(Keys の名前。修飾の組み合わせ・未定義の値は読めない扱い)。</summary>
+    public static bool TryParse(string? name, out Keys key)
+    {
+        key = Keys.None;
+        if (string.IsNullOrWhiteSpace(name) || name.Contains(',') || name.Contains('+')) return false;
+        if (!Enum.TryParse(name.Trim(), ignoreCase: true, out Keys k) || k == Keys.None || (k & Keys.Modifiers) != 0 || !Enum.IsDefined(k)) return false;
+        key = k;
+        return true;
+    }
+
+    /// <summary>読めなければ初期値(右 Ctrl)。黙って戻さないよう、呼び出し側は <see cref="InvalidWarning"/> を知らせる。</summary>
+    public static Keys Parse(string? name) => TryParse(name, out var k) ? k : Default;
+
+    /// <summary>talkKey を読めないときの知らせ(読めれば null)。</summary>
+    public static string? InvalidWarning(string? name) =>
+        TryParse(name, out _) ? null : $"設定の talkKey「{name}」を読めないため {DisplayName(Default)} を使います";
 
     public static string DisplayName(Keys k) => k switch
     {

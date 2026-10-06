@@ -44,8 +44,8 @@ public sealed class Scenario
 
 /// <summary>
 /// 台本の 1 手。do は次のどれか:
-/// waitModel(モデルの用意を待つ)/ press(トークキーを押す。audio に音声ファイル)/ holdUntilAudioEnd(流し終わるまで押し続ける)/
-/// release(離す)/ key(押下中に別のキー key を押す)/ focus(前面を window = "textbox" か "other" に切り替える)/
+/// waitModel(モデルの用意を待つ)/ press(キー key を押す。省略時は設定のトークキー。audio に音声ファイル)/ holdUntilAudioEnd(流し終わるまで押し続ける)/
+/// release(キー key を離す。省略時はトークキー)/ key(キー key を押して離す。省略時 C)/ focus(前面を window = "textbox" か "other" に切り替える)/
 /// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)
 /// </summary>
 public sealed class ScenarioAction
@@ -54,6 +54,7 @@ public sealed class ScenarioAction
     public string? Audio { get; set; }
     public int? Ms { get; set; }
     public int? TimeoutMs { get; set; }
+    /// <summary>キーの名前(System.Windows.Forms.Keys の名前。例 RControlKey, RMenu, C)。キーはトークキーの判定に通す。</summary>
     public string? Key { get; set; }
     public string? Window { get; set; }
 }
@@ -69,6 +70,9 @@ public sealed class Expectation
     /// <summary>オーバーレイの状態の列(この順に現れること。間に他の状態があってもよい)。</summary>
     public List<string>? States { get; set; }
 
+    /// <summary>オーバーレイの文言に現れていなければならない文字列(どれかの状態の本文に含まれること)。</summary>
+    public List<string>? StateTexts { get; set; }
+
     /// <summary>出てはならない状態。</summary>
     public List<string>? ForbiddenStates { get; set; }
 
@@ -80,6 +84,15 @@ public sealed class Expectation
 
     /// <summary>読めていなければならない文字起こしのバックエンド(Cuda / Cpu)。</summary>
     public string? Runtime { get; set; }
+
+    /// <summary>操作中のアプリへ素通ししたキーの列("RControlKey down" の形。順序どおり。空配列なら素通し無し)。</summary>
+    public List<string>? PassedKeys { get; set; }
+
+    /// <summary>押下中の別キーで合成して送ったキーの列("RControlKey down", "C down")。</summary>
+    public List<string>? SentKeys { get; set; }
+
+    /// <summary>警告の列(空配列なら警告が無いこと)。</summary>
+    public List<string>? Warnings { get; set; }
 
     /// <summary>スクリーンショットが撮れていなければならない状態。</summary>
     public List<string>? Screenshots { get; set; }
