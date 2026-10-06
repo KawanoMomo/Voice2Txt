@@ -1,0 +1,13 @@
+bin/
+obj/
+*.user
+.vs/
+test-results/
+TestResults/
+models/
+*.wav
+*.mp3
+*.m4a
+*.flac
+!tests/fixtures/**
+publish/
