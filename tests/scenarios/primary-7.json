@@ -1,0 +1,28 @@
+{
+  "name": "primary-7",
+  "persona": "primary",
+  "step": 7,
+  "description": "窓の判定: 話している間に同じ窓の別の入力欄へフォーカスを移す。同じ窓なので退避にならず貼られる(判定はウィンドウ単位)",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-11.wav" },
+    { "do": "wait", "ms": 1000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 }
+  ],
+  "expect": {
+    "deliveries": [
+      { "to": "textbox", "text": "同じ窓の別の入力欄に貼られることを確認します。", "minSimilarity": 0.8 }
+    ],
+    "textbox": { "text": "同じ窓の別の入力欄に貼られることを確認します。", "minSimilarity": 0.8 },
+    "states": ["録音中", "処理中", "貼り付け完了"],
+    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
+    "cancellations": [],
+    "maxReleaseToDeliverMs": 1000
+  }
+}

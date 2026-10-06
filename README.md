@@ -12,7 +12,7 @@
 - `src/Voice2Txt.Core/` — 発話の順序・取り消し・貼り付け先の判定・退避のロジック(キー・マイク・クリップボード・前面ウィンドウ・エンジンは差し替え可能)
 - `tests/Voice2Txt.Core.Tests/` — unit(`dotnet test`)
 - `tests/scenarios/` — 検証モードの台本(`{persona}-{手順}.json`)。`tools/Verify` が回す
-- `tests/fixtures/audio/` — 合成音声の素材(`ja-one-sentence.wav`: 1 文、`silence.wav`: 無音 3 秒)
+- `tests/fixtures/audio/` — 合成音声の素材(`ja-one-sentence.wav`: 1 文、`silence.wav`: 無音 3 秒、`utt-01`〜`utt-11.wav`: 連投・退避・言い直し用の短い文。`make-fixtures.ps1` で作り直せる。文は同スクリプト内。合成の読みを表示するので、正解文と違う読みになっていないか確かめる)
 
 ## 使い方
 - 起動するとタスクトレイに常駐する。初回はモデル(`large-v3-turbo`)を取得元からダウンロードし、ハッシュで検証してから読み込む(トレイのツールチップに進み具合)

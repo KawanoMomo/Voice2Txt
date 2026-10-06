@@ -1,0 +1,25 @@
+{
+  "name": "junior-2",
+  "persona": "junior",
+  "step": 2,
+  "description": "トークキーを 0.3 秒未満押して離す。何も貼られず「取り消し」(押す時間が短すぎます)が出る",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "wait", "ms": 500 },
+    { "do": "waitIdle", "timeoutMs": 60000 }
+  ],
+  "expect": {
+    "deliveries": [],
+    "textbox": { "text": "" },
+    "states": ["取り消し"],
+    "stateTexts": ["押す時間が短すぎます"],
+    "forbiddenStates": ["処理中", "貼り付け完了", "退避"],
+    "cancellations": ["TooShort"],
+    "screenshots": ["取り消し"]
+  }
+}
