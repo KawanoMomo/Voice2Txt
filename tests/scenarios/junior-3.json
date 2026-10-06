@@ -1,0 +1,27 @@
+{
+  "name": "junior-3",
+  "persona": "junior",
+  "step": 3,
+  "description": "1 文をトークキーを押している間に流し、離す。オーバーレイが 準備中 → 録音中 → 処理中 → 貼り付け完了 と変わり、検証用のテキスト欄に確定版だけが届く",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 200 },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 }
+  ],
+  "expect": {
+    "deliveries": [
+      { "to": "textbox", "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 }
+    ],
+    "textbox": { "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 },
+    "states": ["準備中", "録音中", "処理中", "貼り付け完了"],
+    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
+    "cancellations": [],
+    "maxReleaseToDeliverMs": 60000,
+    "screenshots": ["準備中", "録音中", "処理中", "貼り付け完了"]
+  }
+}
