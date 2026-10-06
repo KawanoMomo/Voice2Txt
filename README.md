@@ -28,6 +28,7 @@
 確定版をアプリ自身が開く「検証用のテキスト欄」へ届ける。本物のマイク・クリップボード・キーボードは触らない。`<dir>` に書くもの:
 - `result.json` — 届いた文字列と順序・届け先(`textbox` / 退避は `clipboard`)・各発話の時間(マイクが開くまで・押していた時間・離してから届くまで)・取り消しの理由・状態の列・テキスト欄の中身
 - `shots/NN-{状態}.png` — 状態が変わるごとのオーバーレイのスクリーンショット
+- 本物の前面ウィンドウの検査 — 実行中 25 ms ごとと状態が変わるたびに `GetForegroundWindow` を調べ、`foregroundSamples` / `overlayForegroundCount`・状態ごとの `foreground`(`overlay` / `textbox` / `other`)に残す。オーバーレイが 1 度でも前面になれば、期待に書かなくても tools/Verify は failed にする(フォーカスを奪わない、の受け入れ基準)
 - `verify.log`
 
 台本の設定(`settings`): `talkKey` などを台本に書く(検証モードは `%APPDATA%` の settings.json を読まない)。例 `"settings": {"talkKey": "RMenu"}`。

@@ -201,6 +201,20 @@ public class VerificationTests
     }
 
     [Fact]
+    public void オーバーレイが前面になったら期待に書かなくても失敗にする()
+    {
+        var r = Ok();
+        r.ForegroundSamples = 120;
+        Assert.Empty(Evaluator.Check(Exp(), r));
+        r.OverlayForegroundCount = 2;
+        r.States[1].Foreground = "overlay";
+        var fails = Evaluator.Check(new Expectation(), r);
+        var f = Assert.Single(fails);
+        Assert.Contains("前面", f);
+        Assert.Contains("録音中", f);
+    }
+
+    [Fact]
     public void 台本の音声パスはリポジトリ直下からの相対でも解ける()
     {
         var scenario = Scenario.ResolvePath(System.IO.Path.Combine(AppContext.BaseDirectory, "x.json"), "tests/scenarios/junior-3.json");

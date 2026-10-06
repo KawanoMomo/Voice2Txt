@@ -27,6 +27,12 @@ public sealed class VerifyResult
     /// <summary>設定の問題など、利用者に知らせた警告(例: talkKey を読めない)。</summary>
     public List<string> Warnings { get; set; } = [];
 
+    /// <summary>本物の前面ウィンドウ(GetForegroundWindow)を調べた回数(台本の実行中、一定間隔と状態が変わるたび)。</summary>
+    public int ForegroundSamples { get; set; }
+
+    /// <summary>そのうちオーバーレイ自身が前面だった回数(0 でなければフォーカスを奪っている)。</summary>
+    public int OverlayForegroundCount { get; set; }
+
     public void Save(string path) => File.WriteAllText(path, JsonSerializer.Serialize(this, AppSettings.Json));
     public static VerifyResult Load(string path) =>
         JsonSerializer.Deserialize<VerifyResult>(File.ReadAllText(path), AppSettings.Json) ?? new();
@@ -58,6 +64,9 @@ public sealed class StateRecord
     public string Text { get; set; } = "";
     public string? Screenshot { get; set; }
     public string? Capture { get; set; } // screen / render
+
+    /// <summary>この状態を出した直後の本物の前面ウィンドウ: overlay / textbox / other。</summary>
+    public string? Foreground { get; set; }
 }
 
 public static class TextSimilarity
@@ -100,6 +109,12 @@ public static class Evaluator
     {
         var fails = new List<string>();
         if (!r.Completed) fails.Add($"台本を最後まで実行できなかった: {r.Error}");
+        // 受け入れ基準: オーバーレイはフォーカスを奪わない(期待に書かなくても検査する)
+        if (r.OverlayForegroundCount > 0)
+        {
+            var at = r.States.Where(s => s.Foreground == "overlay").Select(s => s.State).ToList();
+            fails.Add($"オーバーレイが前面(フォーカス)を奪った({r.OverlayForegroundCount}/{r.ForegroundSamples} 回{(at.Count > 0 ? "。状態: " + string.Join(",", at) : "")})");
+        }
 
         if (e.Deliveries is { } ds)
         {
