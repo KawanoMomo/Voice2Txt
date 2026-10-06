@@ -127,6 +127,8 @@ public static class Evaluator
             var got = r.Cancellations.Select(c => c.Reason).ToList();
             if (!got.SequenceEqual(cs)) fails.Add($"取り消し [{string.Join(",", got)}](期待 [{string.Join(",", cs)}])");
         }
+        if (e.Runtime is { } rt && !string.Equals(rt, r.Runtime, StringComparison.OrdinalIgnoreCase))
+            fails.Add($"バックエンド {r.Runtime ?? "(読めていない)"}(期待 {rt})");
         if (e.MaxReleaseToDeliverMs is { } max)
             foreach (var d in r.Deliveries.Where(d => d.ReleaseToDeliverMs > max))
                 fails.Add($"{d.Seq} 番の発話: 離してから届くまで {d.ReleaseToDeliverMs} ms(上限 {max})");

@@ -58,6 +58,10 @@ internal static class EngineLoader
             if (pct != last) { last = pct; onProgress($"{p.Phase} {pct}%"); }
         }), ct);
         onProgress("読み込み");
-        return await Task.Run(() => WhisperTranscriber.Load(path), ct);
+        var t = await Task.Run(() => WhisperTranscriber.Load(path), ct);
+        // 暖機: 最初の文字起こしは GPU の初期化(初回は CUDA カーネルの JIT も)で数秒〜十秒かかる。準備中のうちに無音 1 秒で済ませておく
+        onProgress("暖機");
+        await t.TranscribeAsync(new float[Audio.SampleRate], null, ct);
+        return t;
     }
 }

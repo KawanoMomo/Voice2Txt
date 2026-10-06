@@ -21,7 +21,8 @@
     "states": ["準備中", "録音中", "処理中", "貼り付け完了"],
     "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
     "cancellations": [],
-    "maxReleaseToDeliverMs": 60000,
+    "runtime": "Cuda",
+    "maxReleaseToDeliverMs": 3000,
     "screenshots": ["準備中", "録音中", "処理中", "貼り付け完了"]
   }
 }

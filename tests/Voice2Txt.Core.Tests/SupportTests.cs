@@ -189,6 +189,18 @@ public class VerificationTests
     }
 
     [Fact]
+    public void 期待したバックエンドで動いていなければ失敗にする()
+    {
+        var e = Exp();
+        e.Runtime = "Cuda";
+        var r = Ok();
+        r.Runtime = "Cpu";
+        Assert.Contains(Evaluator.Check(e, r), f => f.Contains("バックエンド Cpu"));
+        r.Runtime = "Cuda";
+        Assert.Empty(Evaluator.Check(e, r));
+    }
+
+    [Fact]
     public void 台本の音声パスはリポジトリ直下からの相対でも解ける()
     {
         var scenario = Scenario.ResolvePath(System.IO.Path.Combine(AppContext.BaseDirectory, "x.json"), "tests/scenarios/junior-3.json");
