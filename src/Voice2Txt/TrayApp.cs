@@ -56,6 +56,21 @@ internal sealed class TrayApp : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add("設定ファイルを開く", null, (_, _) => Process.Start(new ProcessStartInfo("notepad.exe", $"\"{settingsPath}\"") { UseShellExecute = true }));
         menu.Items.Add("設定フォルダを開く", null, (_, _) => Process.Start(new ProcessStartInfo(AppSettings.DefaultDirectory) { UseShellExecute = true }));
+        // ログオン時の自動起動(初期値オフ)。起動時に設定と登録を一致させ、メニューで切り替える
+        var autoStart = new RunKeyAutoStart();
+        var exe = Environment.ProcessPath ?? Application.ExecutablePath;
+        try { AutoStart.Sync(settings.AutoStart, exe, autoStart); } catch (Exception ex) { AppLog.Write("autostart-error " + ex.Message); }
+        var autoItem = new ToolStripMenuItem("ログオン時に起動する") { Checked = settings.AutoStart };
+        autoItem.Click += (_, _) =>
+        {
+            try
+            {
+                autoItem.Checked = AutoStart.Toggle(_settings, settingsPath, exe, autoStart);
+                AppLog.Write($"autostart={autoItem.Checked}");
+            }
+            catch (Exception ex) { AppLog.Write("autostart-error " + ex.Message); }
+        };
+        menu.Items.Add(autoItem);
         menu.Items.Add("終了", null, (_, _) => ExitThread());
         _tray.ContextMenuStrip = menu;
 
