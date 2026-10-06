@@ -43,17 +43,14 @@ internal sealed class Win32Foreground : IForegroundWindow
     public nint Current() => Native.GetForegroundWindow();
 }
 
-/// <summary>クリップボードは STA の UI スレッドで触る。元の内容には戻さない(Win+V の履歴で取り出す運用)。</summary>
+/// <summary>
+/// クリップボードは STA の UI スレッドで触る。元の内容には戻さない(Win+V の履歴で取り出す運用)。
+/// 1 回の呼び出しでは短く試すだけにし(UI を止めない)、入らなければ投げる。粘るのは PushToTalkController。
+/// </summary>
 internal sealed class Win32Clipboard(Control ui) : IClipboard
 {
     public void SetText(string text) => ui.Invoke(() =>
-    {
-        for (int i = 0; ; i++)
-        {
-            try { Clipboard.SetText(text); return; }
-            catch (System.Runtime.InteropServices.ExternalException) when (i < 10) { Thread.Sleep(30); }
-        }
-    });
+        Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), copy: true, retryTimes: 3, retryDelay: 20));
 }
 
 internal sealed class CtrlVSender : IPasteSender

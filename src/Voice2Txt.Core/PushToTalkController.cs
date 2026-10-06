@@ -2,17 +2,21 @@ using System.Threading.Channels;
 
 namespace Voice2Txt.Core;
 
-public enum Outcome { Pasted, Evacuated, Cancelled }
+/// <summary>Failed = 確定版はできたが届けられなかった(クリップボードに入れられない)。退避とは違い、Ctrl+V では貼れない。</summary>
+public enum Outcome { Pasted, Evacuated, Cancelled, Failed }
 
 /// <summary>取り消しの理由(ログ・結果 JSON に書く。本文は書かない)。</summary>
-public enum CancelReason { None, TooShort, OtherKey, Silence, NoText, ModelNotReady, Error }
+public enum CancelReason { None, TooShort, OtherKey, Silence, NoText, ModelNotReady, Error, ClipboardBusy }
 
 /// <summary>1 つの発話の結末。時間はすべて ms。</summary>
 public sealed record UtteranceReport(
     int Seq, Outcome Outcome, CancelReason Reason, string? Text,
     long PressAtMs, long? MicOpenMs, long HeldMs, long? ReleaseToDeliverMs, long? TranscribeMs, string? Error = null);
 
-public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01)
+/// <param name="ClipboardRetryMs">他アプリがクリップボードを開いたままのとき、確定版を入れるまで粘る時間。その間、後の発話は順番を待つ。</param>
+/// <param name="ClipboardRetryIntervalMs">粘る間の試行の間隔。</param>
+public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01,
+    int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50)
 {
     public static PttOptions From(AppSettings s) => new(s.MinPressSeconds, s.SilenceThreshold);
 }
@@ -167,11 +171,17 @@ public sealed class PushToTalkController : IAsyncDisposable
                     Finish(ctx, Outcome.Cancelled, CancelReason.NoText, null, tMs, new(OverlayState.CancelledSilence));
                     continue;
                 }
-                // 確定版をクリップボードへ。貼り付け先ウィンドウが前面のときだけ Ctrl+V、違えば退避。
+                // 確定版をクリップボードへ(入るまで粘る)。入らなければ「Ctrl+V で貼れます」とは言わず、入力失敗を知らせる。
+                var clipError = await PutOnClipboardAsync(text);
+                if (clipError is not null)
+                {
+                    Finish(ctx, Outcome.Failed, CancelReason.ClipboardBusy, null, tMs, new(OverlayState.DeliveryFailed), clipError);
+                    continue;
+                }
+                // 入った後は、貼り付け先ウィンドウが前面のときだけ Ctrl+V、違えば退避(確定版はクリップボードにある)。
                 Outcome outcome;
                 try
                 {
-                    _d.Clipboard.SetText(text);
                     if (_d.Foreground.Current() == ctx.Target) { _d.Paster.SendPaste(); outcome = Outcome.Pasted; }
                     else outcome = Outcome.Evacuated;
                 }
@@ -183,6 +193,23 @@ public sealed class PushToTalkController : IAsyncDisposable
         catch (OperationCanceledException) { }
     }
 
+    /// <summary>確定版をクリップボードへ入れる。入れば null、粘っても入らなければ最後の失敗の理由。</summary>
+    private async Task<string?> PutOnClipboardAsync(string text)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (int attempt = 1; ; attempt++)
+        {
+            try { _d.Clipboard.SetText(text); return null; }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (sw.ElapsedMilliseconds >= _o.ClipboardRetryMs || _cts.IsCancellationRequested)
+                    return $"clipboard attempts={attempt} ms={sw.ElapsedMilliseconds} {ex.GetType().Name}: {ex.Message}";
+            }
+            try { await Task.Delay(_o.ClipboardRetryIntervalMs, _cts.Token); }
+            catch (OperationCanceledException) { return $"clipboard attempts={attempt} cancelled"; }
+        }
+    }
+
     private void Finish(Ctx ctx, Outcome o, CancelReason r, string? text, long? transcribeMs, OverlayView transient, string? error = null)
     {
         lock (_gate)
@@ -191,7 +218,7 @@ public sealed class PushToTalkController : IAsyncDisposable
             _transient = transient;
             long now = _d.Clock.NowMs;
             Report(new(ctx.Seq, o, r, text, ctx.PressAt, ctx.StartedAt - ctx.PressAt, ctx.ReleasedAt - ctx.PressAt,
-                o == Outcome.Cancelled ? null : now - ctx.ReleasedAt, transcribeMs, error));
+                o is Outcome.Cancelled or Outcome.Failed ? null : now - ctx.ReleasedAt, transcribeMs, error));
             Emit();
         }
     }

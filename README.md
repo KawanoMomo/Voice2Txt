@@ -16,7 +16,7 @@
 
 ## 使い方
 - 起動するとタスクトレイに常駐する。初回はモデル(`large-v3-turbo`)を取得元からダウンロードし、ハッシュで検証してから読み込む(トレイのツールチップに進み具合)
-- トークキー(初期値 右 Ctrl)を押している間だけ録音し、離すと確定版を、押した時点の前面ウィンドウへ Ctrl+V で貼る。ウィンドウが変わっていたら貼らずにクリップボードに残す(退避。Ctrl+V で貼れる)
+- トークキー(初期値 右 Ctrl)を押している間だけ録音し、離すと確定版を、押した時点の前面ウィンドウへ Ctrl+V で貼る。ウィンドウが変わっていたら貼らずにクリップボードに残す(退避。Ctrl+V で貼れる)。他のアプリがクリップボードを開いたままなら最大 3 秒粘り、それでも入らなければ「入力失敗」と出す(Ctrl+V では貼れない。ログに `reason=ClipboardBusy`)
 - 設定: `%APPDATA%\Voice2Txt\settings.json`(`talkKey`: トークキーの名前 例 `RControlKey` / `RMenu`、`model`、`minPressSeconds`、`silenceThreshold`)。トレイのメニュー「設定ファイルを開く」。変更は再起動で効く
 - 自動起動: トレイのメニュー「ログオン時に起動する」で切り替える(初期値オフ。設定の `autoStart` と HKCU の Run の値 `Voice2Txt` を一致させる。起動時にも合わせ直す)
 - モデル: `%APPDATA%\Voice2Txt\models\ggml-large-v3-turbo.bin`(手動で置いてもよい。ハッシュが合えば使う)
@@ -30,7 +30,7 @@
 - `shots/NN-{状態}.png` — 状態が変わるごとのオーバーレイのスクリーンショット
 - `verify.log`
 
-台本の手(`actions[].do`): `waitModel` / `press`(`audio`)/ `holdUntilAudioEnd` / `release` / `key`(押下中の別キー)/ `focus`(`window`: `textbox` か `other`)/ `wait`(`ms`)/ `waitIdle`。
+台本の手(`actions[].do`): `waitModel` / `press`(`audio`)/ `holdUntilAudioEnd` / `release` / `key`(押下中の別キー)/ `focus`(`window`: `textbox` か `other`)/ `wait`(`ms`)/ `waitIdle` / `lockClipboard`(`ms`: その間クリップボードを使えなくする。粘っても入らなければ状態「入力失敗」・取り消しの理由 `ClipboardBusy`)。
 期待(`expect`): `deliveries` / `textbox`(`text` と `minSimilarity`)/ `states` / `forbiddenStates` / `cancellations` / `maxReleaseToDeliverMs` / `screenshots`。
 
 全部の台本を回す: `dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios tests/scenarios --out <dir>`(`passed: 名前` / `failed: 名前` と理由、最後に `passed=N failed=M`、`<dir>/summary.json`)

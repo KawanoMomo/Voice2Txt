@@ -111,6 +111,85 @@ public class PushToTalkControllerTests
         Assert.Equal(OverlayState.Evacuated, r.Ptt.CurrentView.State);
     }
 
+    private static readonly PttOptions QuickRetry = new(ClipboardRetryMs: 200, ClipboardRetryIntervalMs: 1);
+
+    [Fact]
+    public async Task クリップボードが一時的に使えなくても粘って入れ_貼り付ける()
+    {
+        await using var r = new Rig(QuickRetry);
+        r.Clip.FailTimes = 3;
+        r.Utter(1000);
+        await r.Idle();
+        var rep = Assert.Single(r.Reports);
+        Assert.Equal((Outcome.Pasted, CancelReason.None), (rep.Outcome, rep.Reason));
+        Assert.Equal([$"len{Audio.SampleRate}"], r.Paster.Pasted.Select(p => p.Text));
+        Assert.Equal(4, r.Clip.Attempts);
+    }
+
+    [Fact]
+    public async Task クリップボードに入ってから窓が変わっていれば退避()
+    {
+        await using var r = new Rig(QuickRetry);
+        r.Clip.FailTimes = 3;
+        r.Fg.Window = 100;
+        r.Ptt.OnTalkKeyDown();
+        r.Fg.Window = 200;
+        r.Clock.NowMs += 1000;
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.Equal(Outcome.Evacuated, Assert.Single(r.Reports).Outcome);
+        Assert.Equal($"len{Audio.SampleRate}", r.Clip.Text);
+        Assert.Equal(OverlayState.Evacuated, r.Ptt.CurrentView.State);
+    }
+
+    [Fact]
+    public async Task クリップボードに入れられなければ退避と出さず_入力失敗を知らせる_CtrlVも送らない()
+    {
+        await using var r = new Rig(QuickRetry);
+        r.Clip.FailTimes = -1;
+        r.Utter(1000);
+        await r.Idle();
+        var rep = Assert.Single(r.Reports);
+        Assert.Equal((Outcome.Failed, CancelReason.ClipboardBusy), (rep.Outcome, rep.Reason));
+        Assert.Null(rep.Text);                          // ログ・結果に本文を残さない
+        Assert.NotNull(rep.Error);
+        Assert.Empty(r.Paster.Pasted);
+        Assert.Null(r.Clip.Text);
+        Assert.DoesNotContain(OverlayState.Evacuated, r.States());
+        Assert.Equal(OverlayState.DeliveryFailed, r.Ptt.CurrentView.State);
+        Assert.DoesNotContain("Ctrl+V", r.Ptt.CurrentView.Text("右Ctrl"));
+        Assert.True(r.Clip.Attempts >= 3);              // すぐには捨てない
+    }
+
+    [Fact]
+    public async Task クリップボードが使えない間も次の発話は順に待ち_使えるようになれば届く()
+    {
+        await using var r = new Rig(QuickRetry);
+        r.Clip.FailTimes = -1;
+        var gate = new TaskCompletionSource();
+        r.Engine.Delay = s => s.Length == Audio.SampleRate / 2 ? gate.Task : Task.CompletedTask;
+        r.Utter(1000, FakeRecorder.Tone(1.0));
+        r.Utter(600, FakeRecorder.Tone(0.5));
+        await Task.Delay(600);
+        r.Clip.FailTimes = 0;                           // 他アプリがクリップボードを放した
+        gate.SetResult();
+        await r.Idle();
+        Assert.Equal([1, 2], r.Reports.Select(x => x.Seq).ToArray());
+        Assert.Equal(Outcome.Failed, r.Reports[0].Outcome);
+        Assert.Equal(Outcome.Pasted, r.Reports[1].Outcome);
+        Assert.Equal([$"len{Audio.SampleRate / 2}"], r.Paster.Pasted.Select(p => p.Text));
+    }
+
+    [Fact]
+    public void 入力失敗の文言は退避と違い_貼れると言わない()
+    {
+        var v = new OverlayView(OverlayState.DeliveryFailed);
+        Assert.Equal("入力失敗", v.Label);
+        Assert.Contains("クリップボード", v.Text("右Ctrl"));
+        Assert.DoesNotContain("貼れます", v.Text("右Ctrl"));
+        Assert.True(v.TransientMs >= 4000);
+    }
+
     [Fact]
     public async Task 処理中に次の発話を録音でき_録音した順に届く_後の発話が先に終わっても追い越さない()
     {

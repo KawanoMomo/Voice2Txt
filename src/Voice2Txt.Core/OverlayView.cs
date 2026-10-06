@@ -1,6 +1,6 @@
 namespace Voice2Txt.Core;
 
-/// <summary>オーバーレイの状態(MOC の 8 つ + 押下が短い・他キーの取り消し + 非表示)。</summary>
+/// <summary>オーバーレイの状態(MOC の 8 つ + 押下が短い・他キーの取り消し + 入力失敗 + 非表示)。</summary>
 public enum OverlayState
 {
     Hidden,
@@ -13,6 +13,7 @@ public enum OverlayState
     CancelledSilence,   // 取り消し(無音)
     Cancelled,          // 取り消し(押下が短い)
     ModelPreparing,     // モデル準備中
+    DeliveryFailed,     // 入力失敗(確定版をクリップボードに入れられなかった。退避と違い Ctrl+V では貼れない)
 }
 
 public sealed record OverlayView(OverlayState State, int PendingCount = 0, string? Detail = null)
@@ -34,6 +35,7 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
         OverlayState.CancelledSilence => "取り消し(無音)",
         OverlayState.Cancelled => "取り消し",
         OverlayState.ModelPreparing => "モデル準備中",
+        OverlayState.DeliveryFailed => "入力失敗",
         _ => s.ToString(),
     };
 
@@ -44,6 +46,7 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
         OverlayState.Evacuated => 4000,
         OverlayState.CancelledSilence => 1500,
         OverlayState.Cancelled => 1200,
+        OverlayState.DeliveryFailed => 6000,
         _ => null,
     };
 
@@ -59,6 +62,7 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
         OverlayState.CancelledSilence => "音声が検出されませんでした",
         OverlayState.Cancelled => $"取り消しました({Detail ?? "押す時間が短すぎます"})",
         OverlayState.ModelPreparing => $"モデル準備中{(Detail is null ? "" : $"({Detail})")} — 完了まで音声入力は使えません",
+        OverlayState.DeliveryFailed => "他のアプリがクリップボードを使用中のため入力できませんでした — もう一度話してください",
         _ => "",
     };
 }

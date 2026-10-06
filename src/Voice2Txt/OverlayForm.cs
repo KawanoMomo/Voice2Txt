@@ -118,7 +118,7 @@ internal sealed class OverlayForm : Form
             case OverlayState.Pasted:
                 TextRenderer.DrawText(g, "✓", Font, new Point(x, cy - Font.Height / 2), Ok);
                 break;
-            case OverlayState.Evacuated:
+            case OverlayState.Evacuated or OverlayState.DeliveryFailed:
                 TextRenderer.DrawText(g, "!", Font, new Point(x + 2, cy - Font.Height / 2), Warn);
                 break;
             case OverlayState.CancelledSilence or OverlayState.Cancelled:
