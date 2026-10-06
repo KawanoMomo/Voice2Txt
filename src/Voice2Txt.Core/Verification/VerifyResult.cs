@@ -18,6 +18,15 @@ public sealed class VerifyResult
     public string Textbox { get; set; } = "";
     public string? Clipboard { get; set; }
 
+    /// <summary>トークキーの判定で操作中のアプリへ素通ししたキー("RControlKey down" の形。順に)。</summary>
+    public List<string> PassedKeys { get; set; } = [];
+
+    /// <summary>押下中の別キーで、トークキーを修飾キーとして合成して送ったキー列("RControlKey down", "C down")。</summary>
+    public List<string> SentKeys { get; set; } = [];
+
+    /// <summary>設定の問題など、利用者に知らせた警告(例: talkKey を読めない)。</summary>
+    public List<string> Warnings { get; set; } = [];
+
     public void Save(string path) => File.WriteAllText(path, JsonSerializer.Serialize(this, AppSettings.Json));
     public static VerifyResult Load(string path) =>
         JsonSerializer.Deserialize<VerifyResult>(File.ReadAllText(path), AppSettings.Json) ?? new();
@@ -120,6 +129,9 @@ public static class Evaluator
             foreach (var s in seen) if (k < st.Count && s == st[k]) k++;
             if (k < st.Count) fails.Add($"状態「{st[k]}」が期待の順に現れない(実際: {string.Join(" → ", seen)})");
         }
+        if (e.StateTexts is { } txts)
+            foreach (var t in txts.Where(t => !r.States.Any(x => x.Text.Contains(t))))
+                fails.Add($"オーバーレイに「{t}」が出ていない");
         if (e.ForbiddenStates is { } fs)
             foreach (var s in fs.Where(f => r.States.Any(x => x.State == f))) fails.Add($"出てはならない状態「{s}」が出た");
         if (e.Cancellations is { } cs)
@@ -127,6 +139,12 @@ public static class Evaluator
             var got = r.Cancellations.Select(c => c.Reason).ToList();
             if (!got.SequenceEqual(cs)) fails.Add($"取り消し [{string.Join(",", got)}](期待 [{string.Join(",", cs)}])");
         }
+        if (e.PassedKeys is { } pk && !r.PassedKeys.SequenceEqual(pk))
+            fails.Add($"素通ししたキー [{string.Join(",", r.PassedKeys)}](期待 [{string.Join(",", pk)}])");
+        if (e.SentKeys is { } sk && !r.SentKeys.SequenceEqual(sk))
+            fails.Add($"合成して送ったキー [{string.Join(",", r.SentKeys)}](期待 [{string.Join(",", sk)}])");
+        if (e.Warnings is { } ws && !r.Warnings.SequenceEqual(ws))
+            fails.Add($"警告 [{string.Join(",", r.Warnings)}](期待 [{string.Join(",", ws)}])");
         if (e.Runtime is { } rt && !string.Equals(rt, r.Runtime, StringComparison.OrdinalIgnoreCase))
             fails.Add($"バックエンド {r.Runtime ?? "(読めていない)"}(期待 {rt})");
         if (e.MaxReleaseToDeliverMs is { } max)

@@ -8,12 +8,16 @@ namespace Voice2Txt;
 /// 検証モード: マイクの代わりに音声ファイルを流し込み、トークキーの押下・離しを台本どおりに指示し、
 /// 確定版をアプリ自身が開く検証用のテキスト欄へ届ける。状態が変わるごとにオーバーレイのスクリーンショットを撮り、
 /// 結果を &lt;out&gt;/result.json に書く。本物のマイク・クリップボード・キーボードフックは使わない。
+/// 台本のキーはキーボードフックと同じ判定(<see cref="TalkKeyFilter"/>)に通し、素通ししたキー・合成して送ったキーを結果に残す。
+/// 設定は台本の settings だけを使う(%APPDATA% の settings.json は読まない)。
 /// </summary>
 internal sealed class VerifyHost : ApplicationContext
 {
     private readonly Scenario _sc;
     private readonly string _scenarioPath, _out, _shots;
     private readonly AppSettings _settings;
+    private readonly Keys _talkKey;
+    private readonly TalkKeyFilter _keys;
     private readonly VerifyTextForm _textForm;
     private readonly OverlayForm _overlay;
     private readonly VerifyRecorder _recorder = new();
@@ -36,10 +40,17 @@ internal sealed class VerifyHost : ApplicationContext
         AppLog.Path = Path.Combine(_out, "verify.log");
         _result = new VerifyResult { Scenario = _sc.Name };
         _settings = _sc.Settings ?? new AppSettings();
+        _talkKey = TalkKeys.Parse(_settings.TalkKey);
+        _keys = new TalkKeyFilter((int)_talkKey);
+        if (TalkKeys.InvalidWarning(_settings.TalkKey) is { } warn)
+        {
+            _result.Warnings.Add(warn);
+            AppLog.Write($"talkkey-invalid name={_settings.TalkKey} fallback={TalkKeys.Default}");
+        }
 
         _textForm = new VerifyTextForm();
         _textForm.Show();
-        _overlay = new OverlayForm(TalkKeys.DisplayName(TalkKeys.Parse(_settings.TalkKey)));
+        _overlay = new OverlayForm(TalkKeys.DisplayName(_talkKey));
         _ = _overlay.Handle;
         _fg = new VirtualForeground(_textForm.Handle);
 
@@ -55,7 +66,7 @@ internal sealed class VerifyHost : ApplicationContext
     private void OnOverlay(OverlayView v)
     {
         _overlay.Apply(v);
-        var rec = new StateRecord { AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(TalkKeys.DisplayName(TalkKeys.Parse(_settings.TalkKey))) };
+        var rec = new StateRecord { AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(TalkKeys.DisplayName(_talkKey)) };
         if (v.State != OverlayState.Hidden)
         {
             _overlay.Refresh();
@@ -66,6 +77,26 @@ internal sealed class VerifyHost : ApplicationContext
         }
         lock (_result) _result.States.Add(rec);
         AppLog.Write($"state {v.Label} capture={rec.Capture}");
+    }
+
+    /// <summary>台本のキー 1 つをトークキーの判定に通す(キーボードフックと同じ)。名前の省略はトークキー。</summary>
+    private void Key(string? name, bool down)
+    {
+        Keys key = name is null ? _talkKey : TalkKeys.TryParse(name, out var k) ? k : throw new InvalidDataException($"キーの名前を読めない: {name}");
+        var v = _keys.OnKey((int)key, down);
+        string ev = $"{key} {(down ? "down" : "up")}";
+        AppLog.Write($"key {ev} swallow={v.Swallow} signal={v.Signal}");
+        lock (_result)
+        {
+            if (!v.Swallow) _result.PassedKeys.Add(ev);
+            foreach (var vk in v.InjectDown) _result.SentKeys.Add($"{(Keys)vk} down");
+        }
+        switch (v.Signal)
+        {
+            case TalkKeySignal.TalkDown: _ptt.OnTalkKeyDown(); break;
+            case TalkKeySignal.TalkUp: _ptt.OnTalkKeyUp(); break;
+            case TalkKeySignal.OtherKeyWhileTalk: _ptt.OnOtherKeyDown(); break;
+        }
     }
 
     private static string Safe(string s) => string.Concat(s.Select(c => Path.GetInvalidFileNameChars().Contains(c) || c == '+' ? '_' : c));
@@ -143,16 +174,17 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 case "press":
                     _recorder.NextAudio = a.Audio is null ? [] : Audio.ReadWav16kMono(Scenario.ResolvePath(_scenarioPath, a.Audio));
-                    _ptt.OnTalkKeyDown();
+                    Key(a.Key, down: true);
                     break;
                 case "holdUntilAudioEnd":
                     await _recorder.WaitAudioEndAsync();
                     break;
                 case "release":
-                    _ptt.OnTalkKeyUp();
+                    Key(a.Key, down: false);
                     break;
                 case "key":
-                    _ptt.OnOtherKeyDown();
+                    Key(a.Key ?? "C", down: true);
+                    Key(a.Key ?? "C", down: false);
                     break;
                 case "focus":
                     _fg.Focus(a.Window ?? "textbox");
