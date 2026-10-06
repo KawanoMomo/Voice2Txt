@@ -65,4 +65,33 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
         OverlayState.DeliveryFailed => "他のアプリがクリップボードを使用中のため入力できませんでした — もう一度話してください",
         _ => "",
     };
+
+    /// <summary>
+    /// 本文を MOC の並び・色で描くための部品列(状態の印 ●・✓・! の後ろに左から並べる)。
+    /// 部品の文字をつなぐと(空白を除いて)<see cref="Text"/> と同じになる。音量バーは文字を持たない。
+    /// </summary>
+    public IReadOnlyList<OverlayPart> Parts(string talkKeyName) => State switch
+    {
+        OverlayState.Preparing => [new(OverlayPartKind.Text, "準備中…"), new(OverlayPartKind.Note, "赤い点が出てから話してください")],
+        OverlayState.Recording => [new(OverlayPartKind.Text, "録音中"), OverlayPart.Meter, new(OverlayPartKind.Key, talkKeyName), new(OverlayPartKind.Text, "を離すと入力")],
+        OverlayState.ProcessingAndRecording => [new(OverlayPartKind.Text, "録音中"), OverlayPart.Meter, new(OverlayPartKind.Badge, $"処理待ち {PendingCount}件")],
+        OverlayState.Evacuated => [new(OverlayPartKind.Text, "ウィンドウが変わったため貼り付けませんでした —"), new(OverlayPartKind.Key, "Ctrl+V"), new(OverlayPartKind.Text, "で貼れます")],
+        OverlayState.Hidden => [],
+        _ => [new(OverlayPartKind.Text, Text(talkKeyName))],
+    };
+}
+
+/// <summary>オーバーレイの本文の部品の種類(MOC の CSS に対応)。</summary>
+public enum OverlayPartKind
+{
+    Text,   // 白の地の文
+    Note,   // 灰色(#bbb)の補足(MOC の .note)
+    Key,    // 枠付きのキー名(MOC の .kbd)
+    Badge,  // 丸いバッジ(MOC の .badge)
+    Meter,  // 音量バー(MOC の .meter)
+}
+
+public sealed record OverlayPart(OverlayPartKind Kind, string Text)
+{
+    public static readonly OverlayPart Meter = new(OverlayPartKind.Meter, "");
 }

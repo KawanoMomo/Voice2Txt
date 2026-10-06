@@ -71,12 +71,25 @@ internal sealed class OverlayForm : Form
 
     private void HideOverlay() { _anim.Stop(); if (Visible) Hide(); }
 
+    // MOC の .row の gap:10px、.kbd(枠・padding 0 5px・11px)、.badge(丸・padding 1px 8px・11px)、.meter(幅 3px×5 本・間 2px)
+    private const int Gap = 10, IconW = 10, PadX = 16, KeyPad = 5, BadgePad = 8, MeterW = 5 * 3 + 4 * 2;
+    private const TextFormatFlags Flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
+    private static readonly Color KeyBorder = Color.FromArgb(128, 255, 255, 255), BadgeFill = Color.FromArgb(46, 255, 255, 255);
+    private readonly Font _small = new("Yu Gothic UI", 8.25f);
+
+    private int PartWidth(OverlayPart p) => p.Kind switch
+    {
+        OverlayPartKind.Meter => MeterW,
+        OverlayPartKind.Key => TextRenderer.MeasureText(p.Text, _small, Size.Empty, Flags).Width + KeyPad * 2,
+        OverlayPartKind.Badge => TextRenderer.MeasureText(p.Text, _small, Size.Empty, Flags).Width + BadgePad * 2,
+        _ => TextRenderer.MeasureText(p.Text, Font, Size.Empty, Flags).Width,
+    };
+
+    private int PartsWidth(IReadOnlyList<OverlayPart> parts) => parts.Sum(PartWidth) + Gap * Math.Max(0, parts.Count - 1);
+
     private void LayoutFor(OverlayView v)
     {
-        var text = v.Text(_talkKeyName);
-        var sz = TextRenderer.MeasureText(text, Font);
-        int extra = v.State is OverlayState.Recording or OverlayState.ProcessingAndRecording ? 30 : 0;
-        int w = 16 + 10 + 10 + sz.Width + extra + 16, h = Math.Max(36, sz.Height + 16);
+        int w = PadX + IconW + Gap + PartsWidth(v.Parts(_talkKeyName)) + PadX, h = Math.Max(36, Font.Height + 16);
         var wa = Screen.PrimaryScreen!.WorkingArea;
         Bounds = new Rectangle(wa.Left + (wa.Width - w) / 2, wa.Bottom - 18 - h, w, h);
         using var path = Rounded(new Rectangle(0, 0, w, h), 18);
@@ -125,19 +138,36 @@ internal sealed class OverlayForm : Form
                 TextRenderer.DrawText(g, "—", Font, new Point(x - 2, cy - Font.Height / 2), Muted);
                 break;
         }
-        x += 20;
-        var text = v.Text(_talkKeyName);
-        var color = v.State == OverlayState.Evacuated ? Warn : Color.White;
-        TextRenderer.DrawText(g, text, Font, new Point(x, cy - TextRenderer.MeasureText(text, Font).Height / 2), color);
-        if (v.State is OverlayState.Recording or OverlayState.ProcessingAndRecording)
+        x += IconW + Gap;
+        // 本文は MOC の並び・色: 地の文は白、補足は灰色、キー名は枠付き、処理待ちは丸いバッジ、音量バーは「録音中」の直後
+        foreach (var p in v.Parts(_talkKeyName))
         {
-            int mx = x + TextRenderer.MeasureText(text, Font).Width + 6;
-            using var b = new SolidBrush(Color.White);
-            for (int i = 0; i < 5; i++)
+            int pw = PartWidth(p);
+            switch (p.Kind)
             {
-                int hgt = 3 + (int)(11 * Math.Abs(Math.Sin(_tick * 0.6 + i * 0.9)));
-                g.FillRectangle(b, mx + i * 5, cy - hgt / 2, 3, hgt);
+                case OverlayPartKind.Meter:
+                    using (var b = new SolidBrush(Color.White))
+                        for (int i = 0; i < 5; i++)
+                        {
+                            int hgt = 3 + (int)(11 * Math.Abs(Math.Sin(_tick * 0.6 + i * 0.9)));
+                            g.FillRectangle(b, x + i * 5, cy - hgt / 2, 3, hgt);
+                        }
+                    break;
+                case OverlayPartKind.Key or OverlayPartKind.Badge:
+                    int th = TextRenderer.MeasureText(p.Text, _small, Size.Empty, Flags).Height, bh = th + 2;
+                    var box = new Rectangle(x, cy - bh / 2, pw - 1, bh);
+                    if (p.Kind == OverlayPartKind.Key)
+                        using (var path = Rounded(box, 4)) using (var pen = new Pen(KeyBorder)) g.DrawPath(pen, path);
+                    else
+                        using (var path = Rounded(box, bh)) using (var b = new SolidBrush(BadgeFill)) g.FillPath(b, path);
+                    TextRenderer.DrawText(g, p.Text, _small, new Point(x + (p.Kind == OverlayPartKind.Key ? KeyPad : BadgePad), cy - th / 2), Color.White, Flags);
+                    break;
+                default:
+                    int h = TextRenderer.MeasureText(p.Text, Font, Size.Empty, Flags).Height;
+                    TextRenderer.DrawText(g, p.Text, Font, new Point(x, cy - h / 2), p.Kind == OverlayPartKind.Note ? Muted : Color.White, Flags);
+                    break;
             }
+            x += pw + Gap;
         }
     }
 
