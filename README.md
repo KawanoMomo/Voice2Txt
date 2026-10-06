@@ -18,6 +18,7 @@
 - 起動するとタスクトレイに常駐する。初回はモデル(`large-v3-turbo`)を取得元からダウンロードし、ハッシュで検証してから読み込む(トレイのツールチップに進み具合)
 - トークキー(初期値 右 Ctrl)を押している間だけ録音し、離すと確定版を、押した時点の前面ウィンドウへ Ctrl+V で貼る。ウィンドウが変わっていたら貼らずにクリップボードに残す(退避。Ctrl+V で貼れる)
 - 設定: `%APPDATA%\Voice2Txt\settings.json`(`talkKey`: トークキーの名前 例 `RControlKey` / `RMenu`、`model`、`minPressSeconds`、`silenceThreshold`)。トレイのメニュー「設定ファイルを開く」。変更は再起動で効く
+- 自動起動: トレイのメニュー「ログオン時に起動する」で切り替える(初期値オフ。設定の `autoStart` と HKCU の Run の値 `Voice2Txt` を一致させる。起動時にも合わせ直す)
 - モデル: `%APPDATA%\Voice2Txt\models\ggml-large-v3-turbo.bin`(手動で置いてもよい。ハッシュが合えば使う)
 - ログ: `%APPDATA%\Voice2Txt\logs\app.log`(時間・取り消しの理由などのメタ情報だけ。文字起こしの本文は書かない)
 - バックエンド: CUDA を先に試し、読めなければ CPU(ログの `engine-ready runtime=`)。CUDA に要る `cudart64_13.dll` / `cublas64_13.dll` / `cublasLt64_13.dll` は、ビルド時に NVIDIA の公式 redist から取得し SHA-256 を確かめて exe の横に置く(`src/Voice2Txt/CudaRedist.targets`、キャッシュ `%LOCALAPPDATA%\Voice2Txt\redist`、`-p:FFV_SkipCudaRedist=true` で取得しない)。実行時はネットに出ない。起動時に無音 1 秒で暖機してから受け付ける

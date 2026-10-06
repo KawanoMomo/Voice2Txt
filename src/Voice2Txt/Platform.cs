@@ -66,6 +66,30 @@ internal sealed class CtrlVSender : IPasteSender
     }
 }
 
+/// <summary>ログオン時の自動起動: HKCU\Software\Microsoft\Windows\CurrentVersion\Run の値 Voice2Txt。</summary>
+internal sealed class RunKeyAutoStart : IAutoStartRegistry
+{
+    private const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run", Name = "Voice2Txt";
+
+    public string? Registered()
+    {
+        using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(Key);
+        return k?.GetValue(Name) as string;
+    }
+
+    public void Register(string command)
+    {
+        using var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(Key);
+        k.SetValue(Name, command);
+    }
+
+    public void Unregister()
+    {
+        using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(Key, writable: true);
+        k?.DeleteValue(Name, throwOnMissingValue: false);
+    }
+}
+
 /// <summary>メタ情報だけのログ(文字起こしの本文は書かない)。</summary>
 internal static class AppLog
 {
