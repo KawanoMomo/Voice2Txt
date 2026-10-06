@@ -20,7 +20,7 @@
 - 設定: `%APPDATA%\Voice2Txt\settings.json`(`talkKey`: トークキーの名前 例 `RControlKey` / `RMenu`、`model`、`minPressSeconds`、`silenceThreshold`)。トレイのメニュー「設定ファイルを開く」。変更は再起動で効く
 - モデル: `%APPDATA%\Voice2Txt\models\ggml-large-v3-turbo.bin`(手動で置いてもよい。ハッシュが合えば使う)
 - ログ: `%APPDATA%\Voice2Txt\logs\app.log`(時間・取り消しの理由などのメタ情報だけ。文字起こしの本文は書かない)
-- バックエンド: CUDA を先に試し、読めなければ CPU(ログの `engine-ready runtime=`)。CUDA には cuBLAS 13(`cublas64_13.dll`)が要る
+- バックエンド: CUDA を先に試し、読めなければ CPU(ログの `engine-ready runtime=`)。CUDA に要る `cudart64_13.dll` / `cublas64_13.dll` / `cublasLt64_13.dll` は、ビルド時に NVIDIA の公式 redist から取得し SHA-256 を確かめて exe の横に置く(`src/Voice2Txt/CudaRedist.targets`、キャッシュ `%LOCALAPPDATA%\Voice2Txt\redist`、`-p:FFV_SkipCudaRedist=true` で取得しない)。実行時はネットに出ない。起動時に無音 1 秒で暖機してから受け付ける
 
 ## 検証モード
 `Voice2Txt.exe --verify --scenario <json> --out <dir>` — マイクの代わりに台本の音声ファイルを流し込み、トークキーの押下・離しを台本どおりに指示し、

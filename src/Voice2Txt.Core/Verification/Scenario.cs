@@ -78,6 +78,9 @@ public sealed class Expectation
     /// <summary>離してから届くまでの上限(ms)。</summary>
     public long? MaxReleaseToDeliverMs { get; set; }
 
+    /// <summary>読めていなければならない文字起こしのバックエンド(Cuda / Cpu)。</summary>
+    public string? Runtime { get; set; }
+
     /// <summary>スクリーンショットが撮れていなければならない状態。</summary>
     public List<string>? Screenshots { get; set; }
 }

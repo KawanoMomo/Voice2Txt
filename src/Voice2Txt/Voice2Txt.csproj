@@ -24,4 +24,6 @@
     <SelfContained>false</SelfContained>
   </PropertyGroup>
 
+  <Import Project="CudaRedist.targets" />
+
 </Project>
