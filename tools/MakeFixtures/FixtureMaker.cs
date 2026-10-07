@@ -42,6 +42,7 @@ public static class FixtureMaker
         ["utt-21"] = "来週のリリースに向けて、設計書の第三章に認証まわりのモジュールを分割する案と、ログの出力形式を統一する案を追記しましたので、各自で目を通したうえで、明日の打ち合わせまでに画面の配置についても意見をください。",
         ["utt-22"] = "来週の出張について、Please confirm the hotel booking.と英語で書かれたメールが届いたので、返信をお願いします。", // Mixed: 英文は英語の男性の声
         ["utt-23"] = "部長が会議の最後に、Let's meet again next week.と言っていました。", // Mixed: 英文は英語の男性の声
+        ["utt-24"] = "本日の定例会議では、まず先月の進捗状況について報告します。設計の見直しは予定通り終わり、試作品の組み立ても順調に進んでいます。次に、課題として上がっていた部品の調達遅れについてですが、取引先と相談した結果、来週の前半には納品される見込みです。そのため、検証作業の開始日は当初の計画から二日ほど遅れる可能性があります。ただし、全体の納期には影響がないと考えています。続いて、予算の執行状況を説明します。今月の支出は計画の範囲内に収まっており、追加の費用は発生していません。最後に、来月の予定を確認します。新しい担当者が二人加わるため、最初の一週間は研修に充てる予定です。質問や意見があれば、会議の後でも構いませんので、遠慮なくお知らせください。", // Mixed: 10 文を間を置いて読む(約 60 秒。whisper の窓を 2 つ以上使う)
     };
 
     /// <summary>無音だけの素材(秒)。無音で押して離したら取り消し、を確かめる。</summary>
@@ -76,16 +77,17 @@ public static class FixtureMaker
     };
 
     /// <summary>
-    /// 言語の混ざった発話: 日本語の文の間に、別の話者(英語の声)が読む英文を挟む。名前 = 読む順の (声の言語, 声の性別, 文)。
+    /// 文ごとに声を選び、間を置いて読む発話: 日本語の文の間に別の話者(英語の声)が読む英文を挟む、文を重ねて 30 秒を超える、など。名前 = 読む順の (声の言語, 声の性別, 文)。
     /// <see cref="Items"/> の文はこれをつないだもの(台本の期待と同じ)。声の切り替わりの前後に <see cref="MixedPause"/> 秒の間を置く。
     /// </summary>
     public static readonly IReadOnlyDictionary<string, (string Culture, VoiceGender Gender, string Text)[]> Mixed = new Dictionary<string, (string, VoiceGender, string)[]>
     {
         ["utt-22"] = [("ja-JP", VoiceGender.Female, "来週の出張について、"), ("en-US", VoiceGender.Male, "Please confirm the hotel booking."), ("ja-JP", VoiceGender.Female, "と英語で書かれたメールが届いたので、返信をお願いします。")],
         ["utt-23"] = [("ja-JP", VoiceGender.Female, "部長が会議の最後に、"), ("en-US", VoiceGender.Male, "Let's meet again next week."), ("ja-JP", VoiceGender.Female, "と言っていました。")],
+        ["utt-24"] = [("ja-JP", VoiceGender.Female, "本日の定例会議では、まず先月の進捗状況について報告します。"), ("ja-JP", VoiceGender.Female, "設計の見直しは予定通り終わり、試作品の組み立ても順調に進んでいます。"), ("ja-JP", VoiceGender.Female, "次に、課題として上がっていた部品の調達遅れについてですが、取引先と相談した結果、来週の前半には納品される見込みです。"), ("ja-JP", VoiceGender.Female, "そのため、検証作業の開始日は当初の計画から二日ほど遅れる可能性があります。"), ("ja-JP", VoiceGender.Female, "ただし、全体の納期には影響がないと考えています。"), ("ja-JP", VoiceGender.Female, "続いて、予算の執行状況を説明します。"), ("ja-JP", VoiceGender.Female, "今月の支出は計画の範囲内に収まっており、追加の費用は発生していません。"), ("ja-JP", VoiceGender.Female, "最後に、来月の予定を確認します。"), ("ja-JP", VoiceGender.Female, "新しい担当者が二人加わるため、最初の一週間は研修に充てる予定です。"), ("ja-JP", VoiceGender.Female, "質問や意見があれば、会議の後でも構いませんので、遠慮なくお知らせください。")],
     };
 
-    /// <summary>言語の混ざった発話で、声が切り替わる所に置く間(秒)。</summary>
+    /// <summary><see cref="Mixed"/> の文と文の間に置く間(秒)。</summary>
     public const double MixedPause = 0.5;
 
     public static IEnumerable<string> Names => Items.Keys.Concat(Silences.Keys);
