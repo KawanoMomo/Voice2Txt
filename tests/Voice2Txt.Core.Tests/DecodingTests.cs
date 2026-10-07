@@ -15,10 +15,17 @@ public class DecodingTests
     public void 初期プロンプトは言い淀みをかなで見せる(string filler) => Assert.Contains(filler, Decoding.InitialPrompt);
 
     [Fact]
-    public void 初期プロンプトは短くかなと句読点だけ()
+    public void 初期プロンプトは数える列の終わりの十を数字で見せる()
     {
-        // 長い・内容のあるプロンプトは無音や短い発話でそのまま出てくる(幻聴)種になる
+        // 「…ここのつ、とお。」の「とお」は「つ」が付かない短い数で、前置きが無いと「等」になる
+        Assert.EndsWith("9つ、10。", Decoding.InitialPrompt);
+    }
+
+    [Fact]
+    public void 初期プロンプトは短くかなと数字と句読点だけ()
+    {
+        // 長い・内容のあるプロンプトは無音や短い発話でそのまま出てくる(幻聴)種になる。漢字の語は入れない
         Assert.True(Decoding.InitialPrompt.Length <= 32);
-        Assert.All(Decoding.InitialPrompt, c => Assert.True(c is >= 'ぁ' and <= 'ゖ' or 'ー' or '、' or '。', $"かな以外: {c}"));
+        Assert.All(Decoding.InitialPrompt, c => Assert.True(c is >= 'ぁ' and <= 'ゖ' or 'ー' or '、' or '。' or >= '0' and <= '9', $"かな・数字以外: {c}"));
     }
 }
