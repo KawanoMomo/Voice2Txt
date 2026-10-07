@@ -47,6 +47,7 @@ public sealed class Scenario
 /// waitModel(モデルの用意を待つ)/ press(キー key を押す。省略時は設定のトークキー。audio に音声ファイル)/ holdUntilAudioEnd(流し終わるまで押し続ける)/
 /// release(キー key を離す。省略時はトークキー)/ key(キー key を押して離す。省略時 C)/ focus(前面を window = "textbox" か "other" に切り替える)/
 /// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)/
+/// pasteReadDelay(以後、検証用のテキスト欄が Ctrl+V を受けてから ms 後にクリップボードを読む。遅い貼り付け先。0 で即時)/
 /// shot(今のオーバーレイを name の名で撮り、そのときの状態と音量バーの値を結果の shots に残す)
 /// </summary>
 public sealed class ScenarioAction

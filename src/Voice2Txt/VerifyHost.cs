@@ -25,6 +25,7 @@ internal sealed class VerifyHost : ApplicationContext
     private readonly VerifyRecorder _recorder = new();
     private readonly VirtualForeground _fg;
     private readonly MemoryClipboard _clip = new();
+    private readonly TextBoxPaster _paster;
     private readonly PushToTalkController _ptt;
     private readonly DeferredTranscriber _engine = new();
     private readonly VerifyResult _result;
@@ -57,8 +58,9 @@ internal sealed class VerifyHost : ApplicationContext
         _ = _overlay.Handle;
         _fg = new VirtualForeground(_textForm.Handle);
 
+        _paster = new TextBoxPaster(_textForm, _clip);
         _ptt = new PushToTalkController(
-            new PttDependencies(_recorder, _fg, _clip, new TextBoxPaster(_textForm, _clip), _engine, new SystemClock()),
+            new PttDependencies(_recorder, _fg, _clip, _paster, _engine, new SystemClock()),
             PttOptions.From(_settings));
         _ptt.OverlayChanged += v => _overlay.BeginInvoke(() => OnOverlay(v));
         _ptt.Finished += OnFinished;
@@ -161,6 +163,7 @@ internal sealed class VerifyHost : ApplicationContext
         if (first == timeout) _result.Error = $"台本が {_sc.TimeoutMs} ms で終わらない";
         else if (run.Exception is { } ex) _result.Error = ex.InnerException?.Message ?? ex.Message;
         else _result.Completed = true;
+        await Task.WhenAny(_paster.DrainAsync(), Task.Delay(10_000));
         await Task.Delay(300);
         _overlay.Invoke(() =>
         {
@@ -228,6 +231,9 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 case "lockClipboard":
                     _clip.LockFor(a.Ms ?? 0);
+                    break;
+                case "pasteReadDelay":
+                    _paster.ReadDelayMs = a.Ms ?? 0;
                     break;
                 case "wait":
                     await Task.Delay(a.Ms ?? 0);
@@ -340,8 +346,27 @@ internal sealed class MemoryClipboard : IClipboard
     }
 }
 
-/// <summary>Ctrl+V の代わりに、クリップボードの中身を検証用のテキスト欄のカーソル位置へ貼る。</summary>
+/// <summary>
+/// Ctrl+V の代わりに、クリップボードの中身を検証用のテキスト欄のカーソル位置へ貼る。
+/// 台本の pasteReadDelay を指定すると、本物の貼り付け先のように Ctrl+V を受けてから ms 後にクリップボードを読む(遅い貼り付け先)。
+/// </summary>
 internal sealed class TextBoxPaster(VerifyTextForm form, MemoryClipboard clip) : IPasteSender
 {
-    public void SendPaste() => form.Invoke(() => form.Box.SelectedText = clip.Text ?? "");
+    private readonly List<Task> _reads = [];
+    public volatile int ReadDelayMs;
+
+    public void SendPaste()
+    {
+        int delay = ReadDelayMs;
+        if (delay <= 0) { form.Invoke(() => form.Box.SelectedText = clip.Text ?? ""); return; }
+        var t = Task.Run(async () =>
+        {
+            await Task.Delay(delay);
+            form.Invoke(() => form.Box.SelectedText = clip.Text ?? "");
+        });
+        lock (_reads) _reads.Add(t);
+    }
+
+    /// <summary>遅れて読む貼り付けが全部終わるまで待つ。</summary>
+    public Task DrainAsync() { lock (_reads) return Task.WhenAll(_reads.ToArray()); }
 }
