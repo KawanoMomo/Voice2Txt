@@ -2,10 +2,14 @@
   "name": "junior-5",
   "persona": "junior",
   "step": 5,
-  "description": "設定でトークキーを右 Alt に変え、同じ 1 文を貼る。右 Ctrl を押しても録音されず(素通し)、右 Alt で貼れる。オーバーレイは「右Alt を離すと入力」",
+  "description": "設定画面(トレイの「設定…」)を開き、トークキーを選択肢から右 Alt に変えて保存する(settings.json に RMenu が書かれる)。再起動後、同じ 1 文を貼る: 右 Ctrl を押しても録音されず(素通し)、右 Alt で貼れる。オーバーレイは「右Alt を離すと入力」",
   "timeoutMs": 600000,
-  "settings": { "talkKey": "RMenu" },
   "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "openSettings", "name": "開いた" },
+    { "do": "setSetting", "name": "talkKey", "value": "右Alt" },
+    { "do": "saveSettings", "name": "右Altを選んだ" },
+    { "do": "restart" },
     { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "focus", "window": "textbox" },
     { "do": "press", "key": "RControlKey", "audio": "test-results/fixtures/ja-one-sentence.wav" },
@@ -19,6 +23,8 @@
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
+    "savedSettings": { "talkKey": "RMenu" },
+    "settingsErrors": [],
     "deliveries": [
       { "to": "textbox", "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 }
     ],
@@ -31,6 +37,7 @@
     "sentKeys": [],
     "warnings": [],
     "maxReleaseToDeliverMs": 3000,
-    "screenshots": ["録音中", "貼り付け完了"]
+    "screenshots": ["録音中", "貼り付け完了"],
+    "shots": [{ "name": "開いた", "state": "設定画面" }, { "name": "右Altを選んだ", "state": "設定画面" }]
   }
 }

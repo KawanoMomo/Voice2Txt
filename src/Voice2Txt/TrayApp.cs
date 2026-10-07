@@ -45,6 +45,10 @@ internal sealed class TrayApp : ApplicationContext
     private readonly BlockingCollection<Action> _keys = new();
     private readonly CancellationTokenSource _cts = new();
     private string _modelStatus = "モデル準備中";
+    private readonly ToolStripMenuItem _autoItem;
+    private readonly string _exe;
+    private readonly IAutoStartRegistry _autoStartReg;
+    private SettingsForm? _settingsForm;
 
     public TrayApp(AppSettings settings, string settingsPath)
     {
@@ -57,13 +61,15 @@ internal sealed class TrayApp : ApplicationContext
         // 先頭に版(タグ)。実機受け入れで、今動いている版を画面から確かめられるように
         menu.Items.Add(new ToolStripMenuItem(AppVersion.Label) { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("設定…", null, (_, _) => OpenSettings(settingsPath));
         menu.Items.Add("設定ファイルを開く", null, (_, _) => Process.Start(new ProcessStartInfo("notepad.exe", $"\"{settingsPath}\"") { UseShellExecute = true }));
         menu.Items.Add("設定フォルダを開く", null, (_, _) => Process.Start(new ProcessStartInfo(AppSettings.DefaultDirectory) { UseShellExecute = true }));
         // ログオン時の自動起動(初期値オフ)。起動時に設定と登録を一致させ、メニューで切り替える
         var autoStart = new RunKeyAutoStart();
         var exe = Environment.ProcessPath ?? Application.ExecutablePath;
         try { AutoStart.Sync(settings.AutoStart, exe, autoStart); } catch (Exception ex) { AppLog.Write("autostart-error " + ex.Message); }
-        var autoItem = new ToolStripMenuItem("ログオン時に起動する") { Checked = settings.AutoStart };
+        var autoItem = _autoItem = new ToolStripMenuItem("ログオン時に起動する") { Checked = settings.AutoStart };
+        _exe = exe; _autoStartReg = autoStart;
         autoItem.Click += (_, _) =>
         {
             try
@@ -133,6 +139,30 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
+    /// <summary>トレイの「設定…」: 設定画面を開く(開いていれば前に出す)。保存したら自動起動の登録を合わせ、再起動で効く項目が変われば再起動を勧める。</summary>
+    private void OpenSettings(string settingsPath)
+    {
+        if (_settingsForm is { IsDisposed: false }) { _settingsForm.Activate(); return; }
+        var form = _settingsForm = new SettingsForm(_settings, settingsPath);
+        form.Saved += (_, next, changed) =>
+        {
+            _settings.CopyFrom(next); // トレイの自動起動の切り替えが、保存した値を古い値で上書きしないように
+            try { AutoStart.Sync(_settings.AutoStart, _exe, _autoStartReg); _autoItem.Checked = _settings.AutoStart; }
+            catch (Exception ex) { AppLog.Write("autostart-error " + ex.Message); }
+            if (changed.Any(k => k != "autoStart")
+                && MessageBox.Show("設定を保存しました。トークキー・モデルなどの変更は再起動で効きます。今すぐ再起動しますか?",
+                    "Voice2Txt", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            {
+                Program.RestartRequested = true;
+                AppLog.Write("restart-requested");
+                ExitThread();
+            }
+        };
+        form.FormClosed += (_, _) => _settingsForm = null;
+        form.Show();
+        form.Activate();
+    }
+
     public void NotifyAlreadyRunning() =>
         _overlay.BeginInvoke(() => _tray.ShowBalloonTip(3000, "Voice2Txt", "Voice2Txt は既に起動しています", ToolTipIcon.Info));
 
@@ -155,7 +185,13 @@ internal sealed class DeferredTranscriber : ITranscriber, IDisposable
 {
     private WhisperTranscriber? _inner;
     public string? Runtime => _inner?.Runtime;
-    public void Set(WhisperTranscriber t) => _inner = t;
+    /// <summary>読み込んだエンジンに委ねる(読み込み直したときは前のものを片付ける)。</summary>
+    public void Set(WhisperTranscriber t)
+    {
+        var old = _inner;
+        _inner = t;
+        if (old is not null && !ReferenceEquals(old, t)) old.Dispose();
+    }
 
     public Task<string> TranscribeAsync(float[] samples16k, IProgress<string>? partial, CancellationToken ct) =>
         _inner?.TranscribeAsync(samples16k, partial, ct) ?? throw new InvalidOperationException("モデルが未準備");
@@ -184,13 +220,6 @@ internal static class TalkKeys
     public static string? InvalidWarning(string? name) =>
         TryParse(name, out _) ? null : $"設定の talkKey「{name}」を読めないため {DisplayName(Default)} を使います";
 
-    public static string DisplayName(Keys k) => k switch
-    {
-        Keys.RControlKey => "右Ctrl",
-        Keys.LControlKey => "左Ctrl",
-        Keys.RMenu => "右Alt",
-        Keys.LMenu => "左Alt",
-        Keys.RShiftKey => "右Shift",
-        _ => k.ToString(),
-    };
+    /// <summary>画面に出す名前(設定画面の選択肢と同じ。<see cref="SettingsSchema.TalkKeyChoices"/>)。</summary>
+    public static string DisplayName(Keys k) => SettingsSchema.TalkKeyLabel(k.ToString());
 }

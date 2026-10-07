@@ -61,6 +61,13 @@ public sealed class AppSettings
         return d;
     }
 
+    /// <summary>o の値をすべて写す(設定画面で保存した値を、動いている側の設定にも揃える)。</summary>
+    public void CopyFrom(AppSettings o)
+    {
+        TalkKey = o.TalkKey; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
+        AutoStart = o.AutoStart; RemoveFillers = o.RemoveFillers; Fillers = [.. o.Fillers ?? []]; ShowInterim = o.ShowInterim;
+    }
+
     public void Save(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
