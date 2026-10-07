@@ -251,6 +251,22 @@ public class RecoveryTests
     }
 
     [Fact]
+    public async Task 英文の後ろで黙っている間の写しでも_終わった区間として先に拾い直す()
+    {
+        // 写しは無音を詰めて末尾に余白(0.4 秒)だけ残す: 英文(〜4.0 秒)の後ろで黙っている間の写しは 4.4 秒で止まり、次の文はまだ無い
+        var snapshot = Audio.TrimSilence(Mixed[..(int)(4.7 * Rate)], 0.01);
+        Assert.InRange(snapshot.Length / (double)Rate, 4.0 + Audio.SpeechPadSeconds - 0.05, 4.0 + Audio.SpeechPadSeconds + 0.05);
+        var cache = new SpanCache();
+        var d = new FakeDecoder { Main = _ => [Latin], Span = (" Please confirm the hotel booking.", 0.01) };
+        await Recovery.TranscribeAsync(snapshot, 0.01, d, default, cache, prefetch: true);
+        Assert.Single(d.SpanCalls);
+        d.Main = _ => [Skipped];
+        var final = await Recovery.TranscribeAsync(Mixed, 0.01, d, default, cache);
+        Assert.Equal(1, final.Reused);
+        Assert.Single(d.SpanCalls); // 離した後に 2 回目の復号を回さない
+    }
+
+    [Fact]
     public async Task 先に拾い直すのは英字に読めて_終わった区間だけ()
     {
         var d = new FakeDecoder { Main = _ => [Latin], Span = ("x", 0) };
@@ -316,10 +332,23 @@ public class RecoveryTests
         var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
         Assert.Single(d.SpanCalls); // 「毎月」(1.4)〜「25」(5.8)の 4.4 秒だけが穴
         d.SpanCalls.Clear();
-        d.Main = _ => [Seg((0.5, "締め日は"), (1.5, "毎月"), (2.5, "の"), (3.5, "末"), (4.6, "日"), (5.8, "25"), (6.84, "日"), (7.5, "です。"))];
+        d.Main = _ => [Seg((0.5, "締め日は"), (1.4, "毎月"), (2.4, "の"), (3.4, "末"), (4.4, "日"), (5.2, "と"), (5.8, "25"), (6.84, "日"), (7.5, "です。"))];
         r = await Recovery.TranscribeAsync(s, 0.01, d, default);
         Assert.Empty(d.SpanCalls);
         Assert.Equal(0, r.Recovered);
+    }
+
+    [Fact]
+    public async Task 語の間の雑音は穴の声に数えない()
+    {
+        // 声(0.3 の正弦波)の間の 1.0〜2.6 秒に小さい雑音(声の約 -23 dB)。声の区間としてはつながるが、語の穴の声には数えない
+        var s = Voice(4, (0, 1.0), (2.6, 4.0));
+        for (int i = (int)(1.0 * Rate); i < (int)(2.6 * Rate); i++) s[i] = (float)(0.02 * Math.Sin(2 * Math.PI * 900 * i / Rate));
+        Assert.Single(Recovery.VoicedSpans(s, Audio.VoiceLevel(s, 0.01)));
+        var d = new FakeDecoder { Main = _ => [Seg((0.5, "今日の"), (0.9, "午後は"), (2.7, "集合"), (3.5, "です。"))], Span = ("思い出した", 0) };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Equal("今日の午後は集合です。", r.Text);
+        Assert.Empty(d.SpanCalls);
     }
 
     [Fact]
