@@ -8,19 +8,21 @@ public enum Outcome { Pasted, Evacuated, Cancelled, Failed }
 /// <summary>取り消しの理由(ログ・結果 JSON に書く。本文は書かない)。</summary>
 public enum CancelReason { None, TooShort, OtherKey, Silence, NoText, ModelNotReady, Error, ClipboardBusy }
 
-/// <summary>1 つの発話の結末。時間はすべて ms。</summary>
+/// <summary>1 つの発話の結末。時間はすべて ms。FillersRemoved は確定版から取り除いた言い淀みの数。</summary>
 public sealed record UtteranceReport(
     int Seq, Outcome Outcome, CancelReason Reason, string? Text,
-    long PressAtMs, long? MicOpenMs, long HeldMs, long? ReleaseToDeliverMs, long? TranscribeMs, string? Error = null);
+    long PressAtMs, long? MicOpenMs, long HeldMs, long? ReleaseToDeliverMs, long? TranscribeMs, string? Error = null, int FillersRemoved = 0);
 
 /// <param name="ClipboardRetryMs">他アプリがクリップボードを開いたままのとき、確定版を入れるまで粘る時間。その間、後の発話は順番を待つ。</param>
 /// <param name="ClipboardRetryIntervalMs">粘る間の試行の間隔。</param>
 /// <param name="PasteSettleMs">Ctrl+V を送ってから次の確定版でクリップボードを上書きするまで空ける最短の時間(貼り付け先がクリップボードを読むのは
 /// 自分の入力を処理した時で、Ctrl+V を送った時ではない)。前の Ctrl+V の後に押した発話は押下だけでこれ以上経つのがふつうで、待つのは処理待ちの発話。</param>
+/// <param name="Fillers">確定版から取り除く言い淀みの語(<see cref="Core.Fillers"/>)。null か空なら取り除かない。</param>
 public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01,
-    int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500)
+    int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500, IReadOnlyList<string>? Fillers = null)
 {
-    public static PttOptions From(AppSettings s) => new(s.MinPressSeconds, s.SilenceThreshold);
+    public static PttOptions From(AppSettings s) => new(s.MinPressSeconds, s.SilenceThreshold,
+        Fillers: s.RemoveFillers ? (s.Fillers ?? []) : null);
 }
 
 public sealed record PttDependencies(
@@ -182,9 +184,12 @@ public sealed class PushToTalkController : IAsyncDisposable
                 catch (OperationCanceledException) { return; }
                 catch (Exception ex) { Finish(ctx, Outcome.Cancelled, CancelReason.Error, null, _d.Clock.NowMs - t0, new(OverlayState.Cancelled, 0, "文字起こしに失敗しました"), ex.Message); continue; }
                 long tMs = _d.Clock.NowMs - t0;
+                // 言い淀みを取り除いてから届ける(設定で止められる)。言い淀みだけの発話は空になり、取り消し(無音)になる。
+                int fillers = 0;
+                if (_o.Fillers is { Count: > 0 } words) (text, fillers) = Core.Fillers.Remove(text, words);
                 if (text.Length == 0)
                 {
-                    Finish(ctx, Outcome.Cancelled, CancelReason.NoText, null, tMs, new(OverlayState.CancelledSilence));
+                    Finish(ctx, Outcome.Cancelled, CancelReason.NoText, null, tMs, new(OverlayState.CancelledSilence), fillers: fillers);
                     continue;
                 }
                 // 前の発話の Ctrl+V を貼り付け先が読み終える前に上書きしない(処理待ちの発話だけがここで待つ)。
@@ -193,7 +198,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 var clipError = await PutOnClipboardAsync(text);
                 if (clipError is not null)
                 {
-                    Finish(ctx, Outcome.Failed, CancelReason.ClipboardBusy, null, tMs, new(OverlayState.DeliveryFailed), clipError);
+                    Finish(ctx, Outcome.Failed, CancelReason.ClipboardBusy, null, tMs, new(OverlayState.DeliveryFailed), clipError, fillers);
                     continue;
                 }
                 // 入った後は、貼り付け先ウィンドウが前面のときだけ Ctrl+V、違えば退避(確定版はクリップボードにある)。
@@ -207,9 +212,9 @@ public sealed class PushToTalkController : IAsyncDisposable
                     }
                     else outcome = Outcome.Evacuated;
                 }
-                catch (Exception ex) { Finish(ctx, Outcome.Evacuated, CancelReason.Error, text, tMs, new(OverlayState.Evacuated), ex.Message); continue; }
+                catch (Exception ex) { Finish(ctx, Outcome.Evacuated, CancelReason.Error, text, tMs, new(OverlayState.Evacuated), ex.Message, fillers); continue; }
                 Finish(ctx, outcome, CancelReason.None, text, tMs,
-                    new(outcome == Outcome.Pasted ? OverlayState.Pasted : OverlayState.Evacuated));
+                    new(outcome == Outcome.Pasted ? OverlayState.Pasted : OverlayState.Evacuated), fillers: fillers);
             }
         }
         catch (OperationCanceledException) { }
@@ -242,7 +247,7 @@ public sealed class PushToTalkController : IAsyncDisposable
         }
     }
 
-    private void Finish(Ctx ctx, Outcome o, CancelReason r, string? text, long? transcribeMs, OverlayView transient, string? error = null)
+    private void Finish(Ctx ctx, Outcome o, CancelReason r, string? text, long? transcribeMs, OverlayView transient, string? error = null, int fillers = 0)
     {
         lock (_gate)
         {
@@ -250,7 +255,7 @@ public sealed class PushToTalkController : IAsyncDisposable
             _transient = transient;
             long now = _d.Clock.NowMs;
             Report(new(ctx.Seq, o, r, text, ctx.PressAt, ctx.StartedAt - ctx.PressAt, ctx.ReleasedAt - ctx.PressAt,
-                o is Outcome.Cancelled or Outcome.Failed ? null : now - ctx.ReleasedAt, transcribeMs, error));
+                o is Outcome.Cancelled or Outcome.Failed ? null : now - ctx.ReleasedAt, transcribeMs, error, fillers));
             Emit();
         }
     }

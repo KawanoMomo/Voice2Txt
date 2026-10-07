@@ -14,7 +14,7 @@ public sealed class Scenario
     /// <summary>台本全体の上限(ms)。tools/Verify はこれを超えたら止めて failed にする。</summary>
     public int TimeoutMs { get; set; } = 300_000;
 
-    /// <summary>既定の設定に重ねる値(talkKey / minPressSeconds / silenceThreshold / model)。</summary>
+    /// <summary>既定の設定に重ねる値(talkKey / minPressSeconds / silenceThreshold / model / removeFillers / fillers)。</summary>
     public AppSettings? Settings { get; set; }
 
     /// <summary>モデルのフォルダ。省略時は %APPDATA%\Voice2Txt\models(全体で共用)。</summary>
@@ -126,6 +126,9 @@ public sealed class TextExpectation
 
     /// <summary>句読点・空白を除いた文字単位の一致率の下限(0〜1)。省略時 1.0(完全一致)。</summary>
     public double? MinSimilarity { get; set; }
+
+    /// <summary>届いた文字列に含まれていてはならない語(例: 取り除くはずの言い淀み)。省略可。</summary>
+    public List<string>? NotContains { get; set; }
 
     [JsonIgnore] public double Threshold => MinSimilarity ?? 1.0;
 }

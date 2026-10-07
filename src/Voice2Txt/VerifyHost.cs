@@ -150,6 +150,7 @@ internal sealed class VerifyHost : ApplicationContext
                 {
                     Seq = r.Seq, To = r.Outcome == Outcome.Pasted ? "textbox" : "clipboard", Text = r.Text ?? "",
                     MicOpenMs = r.MicOpenMs, HeldMs = r.HeldMs, ReleaseToDeliverMs = r.ReleaseToDeliverMs, TranscribeMs = r.TranscribeMs,
+                    FillersRemoved = r.FillersRemoved,
                 });
         }
     }

@@ -111,5 +111,5 @@ internal static class AppLog
     }
 
     public static string Describe(UtteranceReport r) =>
-        $"utterance seq={r.Seq} outcome={r.Outcome} reason={r.Reason} chars={r.Text?.Length ?? 0} micOpenMs={r.MicOpenMs} heldMs={r.HeldMs} releaseToDeliverMs={r.ReleaseToDeliverMs} transcribeMs={r.TranscribeMs}{(r.Error is null ? "" : " error=" + r.Error)}";
+        $"utterance seq={r.Seq} outcome={r.Outcome} reason={r.Reason} chars={r.Text?.Length ?? 0} fillers={r.FillersRemoved} micOpenMs={r.MicOpenMs} heldMs={r.HeldMs} releaseToDeliverMs={r.ReleaseToDeliverMs} transcribeMs={r.TranscribeMs}{(r.Error is null ? "" : " error=" + r.Error)}";
 }

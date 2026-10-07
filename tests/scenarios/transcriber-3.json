@@ -2,7 +2,7 @@
   "name": "transcriber-3",
   "persona": "transcriber",
   "step": 3,
-  "description": "文字起こし: 言い淀み(「ええと」を 2 回)を含む短い発話と、前に 5 秒・後に 20 秒黙ったまま押し続けた発話(計 32 秒)を流し、確定版がどちらも正解文と一致する(言い淀みが英字の「A」や別の語に化けない。長い無音で音声に無い文が足されない。「えーと」の表記の揺れは可)。続けて、しきい値をわずかに超える小さい声で話し始め、息継ぎの後はさらに小さくなる発話を流し、後ろの語が落ちずに届く",
+  "description": "文字起こし: 言い淀み(「ええと」を 2 回)を含む短い発話と、前に 5 秒・後に 20 秒黙ったまま押し続けた発話(計 32 秒)を流し、確定版がどちらも正解文と一致する(言い淀みは取り除かれて届き、英字の「A」や別の語に化けて残らない。長い無音で音声に無い文が足されない)。続けて、しきい値をわずかに超える小さい声で話し始め、息継ぎの後はさらに小さくなる発話を流し、後ろの語が落ちずに届く。最後に「ええ」「あの」「えっと」を挟んだ発話を流し、届いた確定版に言い淀みが残らない(「打ち合わせ」「会議室」は残る)",
   "timeoutMs": 600000,
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
@@ -18,15 +18,20 @@
     { "do": "press", "audio": "tests/fixtures/audio/utt-16.wav" },
     { "do": "holdUntilAudioEnd" },
     { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-17.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "release" },
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
     "deliveries": [
-      { "to": "textbox", "text": "申請書は、ええと、ええと、総務に出してください。", "minSimilarity": 0.85 },
+      { "to": "textbox", "text": "申請書は、総務に出してください。", "minSimilarity": 0.85, "notContains": ["ええと", "えーと", "えっと", "A"] },
       { "to": "textbox", "text": "テストの結果を共有しますので、各自で目を通してください。以上で報告を終わります。", "minSimilarity": 0.85 },
-      { "to": "textbox", "text": "新しい資料は、共有フォルダに保存してあります。", "minSimilarity": 0.85 }
+      { "to": "textbox", "text": "新しい資料は、共有フォルダに保存してあります。", "minSimilarity": 0.85 },
+      { "to": "textbox", "text": "来週の打ち合わせは、会議室でやります。", "minSimilarity": 0.85, "notContains": ["ええ", "えー", "あの", "えっと", "えーと"] }
     ],
-    "textbox": { "text": "申請書は、ええと、ええと、総務に出してください。テストの結果を共有しますので、各自で目を通してください。以上で報告を終わります。新しい資料は、共有フォルダに保存してあります。", "minSimilarity": 0.85 },
+    "textbox": { "text": "申請書は、総務に出してください。テストの結果を共有しますので、各自で目を通してください。以上で報告を終わります。新しい資料は、共有フォルダに保存してあります。来週の打ち合わせは、会議室でやります。", "minSimilarity": 0.85, "notContains": ["ええと", "えーと", "えっと", "あの、"] },
     "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
     "cancellations": [],
     "maxReleaseToDeliverMs": 1000
