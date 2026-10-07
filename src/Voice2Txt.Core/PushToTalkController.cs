@@ -8,10 +8,12 @@ public enum Outcome { Pasted, Evacuated, Cancelled, Failed }
 /// <summary>取り消しの理由(ログ・結果 JSON に書く。本文は書かない)。</summary>
 public enum CancelReason { None, TooShort, OtherKey, Silence, NoText, ModelNotReady, Error, ClipboardBusy }
 
-/// <summary>1 つの発話の結末。時間はすべて ms。FillersRemoved は確定版から取り除いた言い淀みの数。</summary>
+/// <summary>1 つの発話の結末。時間はすべて ms。FillersRemoved は確定版から取り除いた言い淀みの数。
+/// PeakRms は録音の最も大きい 30 ms 区間の RMS(録音が届いた発話だけ。無音の取り消しが声を落としていないかをログで確かめる)。</summary>
 public sealed record UtteranceReport(
     int Seq, Outcome Outcome, CancelReason Reason, string? Text,
-    long PressAtMs, long? MicOpenMs, long HeldMs, long? ReleaseToDeliverMs, long? TranscribeMs, string? Error = null, int FillersRemoved = 0);
+    long PressAtMs, long? MicOpenMs, long HeldMs, long? ReleaseToDeliverMs, long? TranscribeMs, string? Error = null, int FillersRemoved = 0,
+    double? PeakRms = null);
 
 /// <param name="ClipboardRetryMs">他アプリがクリップボードを開いたままのとき、確定版を入れるまで粘る時間。その間、後の発話は順番を待つ。</param>
 /// <param name="ClipboardRetryIntervalMs">粘る間の試行の間隔。</param>
@@ -186,9 +188,11 @@ public sealed class PushToTalkController : IAsyncDisposable
                 try { samples = await audio; }
                 catch (Exception ex) { Finish(ctx, Outcome.Cancelled, CancelReason.Error, null, null, new(OverlayState.Cancelled, 0, "録音に失敗しました"), ex.Message); continue; }
 
-                if (Audio.PeakFrameRms(samples) < _o.SilenceThreshold)
+                // 声の有無は録音の全体で決める(途中経過が出たかどうかには依らない)。小さい声も無音として落とさない(Audio.HasVoice)
+                double peak = Audio.PeakFrameRms(samples);
+                if (!Audio.HasVoice(samples, _o.SilenceThreshold))
                 {
-                    Finish(ctx, Outcome.Cancelled, CancelReason.Silence, null, null, new(OverlayState.CancelledSilence));
+                    Finish(ctx, Outcome.Cancelled, CancelReason.Silence, null, null, new(OverlayState.CancelledSilence), peak: peak);
                     continue;
                 }
                 // 前後と発話の間の長い無音を詰めてから復号に渡す(無音が長いと音声に無い文が足される)
@@ -197,14 +201,14 @@ public sealed class PushToTalkController : IAsyncDisposable
                 string text;
                 try { text = (await _d.Transcriber.TranscribeAsync(samples, null, _cts.Token)).Trim(); }
                 catch (OperationCanceledException) { return; }
-                catch (Exception ex) { Finish(ctx, Outcome.Cancelled, CancelReason.Error, null, _d.Clock.NowMs - t0, new(OverlayState.Cancelled, 0, "文字起こしに失敗しました"), ex.Message); continue; }
+                catch (Exception ex) { Finish(ctx, Outcome.Cancelled, CancelReason.Error, null, _d.Clock.NowMs - t0, new(OverlayState.Cancelled, 0, "文字起こしに失敗しました"), ex.Message, peak: peak); continue; }
                 long tMs = _d.Clock.NowMs - t0;
                 // 言い淀みを取り除いてから届ける(設定で止められる)。言い淀みだけの発話は空になり、取り消し(無音)になる。
                 int fillers = 0;
                 if (_o.Fillers is { Count: > 0 } words) (text, fillers) = Core.Fillers.Remove(text, words);
                 if (text.Length == 0)
                 {
-                    Finish(ctx, Outcome.Cancelled, CancelReason.NoText, null, tMs, new(OverlayState.CancelledSilence), fillers: fillers);
+                    Finish(ctx, Outcome.Cancelled, CancelReason.NoText, null, tMs, new(OverlayState.CancelledSilence), fillers: fillers, peak: peak);
                     continue;
                 }
                 // 前の発話の Ctrl+V を貼り付け先が読み終える前に上書きしない(処理待ちの発話だけがここで待つ)。
@@ -213,7 +217,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 var clipError = await PutOnClipboardAsync(text);
                 if (clipError is not null)
                 {
-                    Finish(ctx, Outcome.Failed, CancelReason.ClipboardBusy, null, tMs, new(OverlayState.DeliveryFailed), clipError, fillers);
+                    Finish(ctx, Outcome.Failed, CancelReason.ClipboardBusy, null, tMs, new(OverlayState.DeliveryFailed), clipError, fillers, peak);
                     continue;
                 }
                 // 入った後は、貼り付け先ウィンドウが前面のときだけ Ctrl+V、違えば退避(確定版はクリップボードにある)。
@@ -227,9 +231,9 @@ public sealed class PushToTalkController : IAsyncDisposable
                     }
                     else outcome = Outcome.Evacuated;
                 }
-                catch (Exception ex) { Finish(ctx, Outcome.Evacuated, CancelReason.Error, text, tMs, new(OverlayState.Evacuated), ex.Message, fillers); continue; }
+                catch (Exception ex) { Finish(ctx, Outcome.Evacuated, CancelReason.Error, text, tMs, new(OverlayState.Evacuated), ex.Message, fillers, peak); continue; }
                 Finish(ctx, outcome, CancelReason.None, text, tMs,
-                    new(outcome == Outcome.Pasted ? OverlayState.Pasted : OverlayState.Evacuated), fillers: fillers);
+                    new(outcome == Outcome.Pasted ? OverlayState.Pasted : OverlayState.Evacuated), fillers: fillers, peak: peak);
             }
         }
         catch (OperationCanceledException) { }
@@ -262,7 +266,7 @@ public sealed class PushToTalkController : IAsyncDisposable
         }
     }
 
-    private void Finish(Ctx ctx, Outcome o, CancelReason r, string? text, long? transcribeMs, OverlayView transient, string? error = null, int fillers = 0)
+    private void Finish(Ctx ctx, Outcome o, CancelReason r, string? text, long? transcribeMs, OverlayView transient, string? error = null, int fillers = 0, double? peak = null)
     {
         lock (_gate)
         {
@@ -271,7 +275,7 @@ public sealed class PushToTalkController : IAsyncDisposable
             _transient = transient;
             long now = _d.Clock.NowMs;
             Report(new(ctx.Seq, o, r, text, ctx.PressAt, ctx.StartedAt - ctx.PressAt, ctx.ReleasedAt - ctx.PressAt,
-                o is Outcome.Cancelled or Outcome.Failed ? null : now - ctx.ReleasedAt, transcribeMs, error, fillers));
+                o is Outcome.Cancelled or Outcome.Failed ? null : now - ctx.ReleasedAt, transcribeMs, error, fillers, peak));
             Emit();
         }
     }
@@ -325,7 +329,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 }
                 if (rec is null || Volatile.Read(ref _pending) > 0) continue;
                 var samples = rec.Snapshot();
-                if (samples.Length < Audio.SampleRate / 2 || Audio.PeakFrameRms(samples) < _o.SilenceThreshold) continue;
+                if (samples.Length < Audio.SampleRate / 2 || !Audio.HasVoice(samples, _o.SilenceThreshold)) continue;
                 samples = Audio.TrimSilence(samples, _o.SilenceThreshold);
                 string text;
                 try { text = (await _d.Transcriber.TranscribeAsync(samples, null, ct)).Trim(); }

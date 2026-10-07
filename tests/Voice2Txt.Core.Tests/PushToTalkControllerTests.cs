@@ -85,6 +85,31 @@ public class PushToTalkControllerTests
     }
 
     [Fact]
+    public async Task しきい値を下回る小さい声も無音として取り消さず届ける()
+    {
+        // 感度の低いマイク・小さい声: 最も大きい所でも無音のしきい値(0.01)に届かないが、マイクの雑音よりはっきり大きい
+        await using var r = new Rig();
+        r.Utter(1500, AudioTests.Noisy([.. FakeRecorder.Silence(0.3), .. FakeRecorder.Tone(0.8, 0.006f), .. FakeRecorder.Silence(0.4)], 0.0003));
+        await r.Idle();
+        var rep = Assert.Single(r.Reports);
+        Assert.Equal((Outcome.Pasted, CancelReason.None), (rep.Outcome, rep.Reason));
+        Assert.Equal(1, r.Engine.Calls);
+        Assert.InRange(rep.PeakRms!.Value, 0.004, 0.0099);
+    }
+
+    [Fact]
+    public async Task 無音の取り消しでも録音の大きさを結末に残す()
+    {
+        await using var r = new Rig();
+        r.Utter(2000, AudioTests.Noisy(FakeRecorder.Silence(2), 0.0003));
+        await r.Idle();
+        var rep = Assert.Single(r.Reports);
+        Assert.Equal(CancelReason.Silence, rep.Reason);
+        Assert.Equal(0, r.Engine.Calls);
+        Assert.InRange(rep.PeakRms!.Value, 0.0001, 0.001);
+    }
+
+    [Fact]
     public async Task 前後の長い無音は詰めてからWhisperに渡す()
     {
         await using var r = new Rig();

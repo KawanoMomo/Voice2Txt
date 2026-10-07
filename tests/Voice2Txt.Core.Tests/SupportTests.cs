@@ -114,6 +114,57 @@ public class AudioTests
         Assert.Same(full, Audio.TrimSilence(full, Th));
     }
 
+    /// <summary>録音機器の雑音(正規分布、RMS <paramref name="rms"/>、種固定)を重ねた写し。</summary>
+    internal static float[] Noisy(float[] a, double rms, int seed = 3)
+    {
+        var rnd = new Random(seed);
+        var o = new float[a.Length];
+        for (int i = 0; i < a.Length; i++)
+            o[i] = a[i] + (float)(Math.Sqrt(-2 * Math.Log(1 - rnd.NextDouble())) * Math.Cos(2 * Math.PI * rnd.NextDouble()) * rms);
+        return o;
+    }
+
+    [Fact]
+    public void 声の有無_しきい値以上の音は声()
+    {
+        Assert.True(Audio.HasVoice([.. FakeRecorder.Silence(1), .. FakeRecorder.Tone(0.5, 0.02f)], Th));
+        Assert.False(Audio.HasVoice(FakeRecorder.Silence(2), Th));
+        Assert.False(Audio.HasVoice([], Th));
+    }
+
+    [Fact]
+    public void 声の有無_しきい値を下回っても雑音よりはっきり大きい声が続けば声()
+    {
+        float[] quiet = Noisy([.. FakeRecorder.Silence(0.3), .. FakeRecorder.Tone(0.6, 0.005f), .. FakeRecorder.Silence(0.5)], 0.0003);
+        Assert.True(Audio.PeakFrameRms(quiet) < Th);
+        Assert.True(Audio.HasVoice(quiet, Th));
+        // 雑音の無い(デジタルの無音の)録音でも同じ
+        Assert.True(Audio.HasVoice([.. FakeRecorder.Silence(0.3), .. FakeRecorder.Tone(0.6, 0.004f)], Th));
+        // 話し始めから離すまで声が続く短い録音でも(静かな区間がほとんど無い)
+        Assert.True(Audio.HasVoice(Noisy([.. FakeRecorder.Silence(0.06), .. FakeRecorder.Tone(1.0, 0.005f)], 0.0003), Th));
+    }
+
+    [Fact]
+    public void 声の有無_ずっと続く雑音と短い物音とごく小さい音は声にしない()
+    {
+        var rnd = new Random(1);
+        var hum = new float[Sec(3)];
+        for (int i = 0; i < hum.Length; i++) hum[i] = (float)((rnd.NextDouble() * 2 - 1) * 0.008); // RMS 約 0.0046 の一様な雑音
+        Assert.False(Audio.HasVoice(hum, Th));
+        // 打鍵の音(60 ms)
+        Assert.False(Audio.HasVoice(Noisy([.. FakeRecorder.Silence(1), .. FakeRecorder.Tone(0.06, 0.008f), .. FakeRecorder.Silence(1)], 0.0003), Th));
+        // しきい値の 2 割(0.002)に届かない音
+        Assert.False(Audio.HasVoice(Noisy([.. FakeRecorder.Silence(1), .. FakeRecorder.Tone(1, 0.0015f), .. FakeRecorder.Silence(1)], 0.0001), Th));
+    }
+
+    [Fact]
+    public void 無音を詰める_しきい値を下回る小さい声も声として詰める()
+    {
+        float[] a = Noisy([.. FakeRecorder.Silence(6), .. FakeRecorder.Tone(1, 0.005f), .. FakeRecorder.Silence(6)], 0.0003);
+        var t = Audio.TrimSilence(a, Th);
+        Assert.InRange(t.Length, Sec(1), Sec(1 + 2 * Audio.SpeechPadSeconds + 0.06));
+    }
+
     [Fact]
     public void 台本の音声素材はリポジトリに入れず_実行時に作る置き場を指す()
     {
