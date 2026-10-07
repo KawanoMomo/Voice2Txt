@@ -5,7 +5,7 @@
 - **用語集**: `../../CONTEXT.md`(本書の太字の用語はすべてここで定義)
 - **ADRドラフト**: `../adr/drafts/whisper-cpp-single-engine.md`、`../adr/drafts/dotnet-host-whisper-net.md`(未採番)
 - **MOC**: `../moc/2026-10-06-ptt-overlay.html`(オーバーレイの状態・途中経過・表示位置)
-- **横断ADR確認**: `E:\00_Git\docs\adr\` 001〜011 を確認。該当なし
+- **横断ADR確認**: 作者の横断 ADR 001〜011 を確認。該当なし
 
 ## 1. 目的
 

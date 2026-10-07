@@ -7,7 +7,7 @@
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "focus", "window": "textbox" },
-    { "do": "press", "audio": "tests/fixtures/audio/silence.wav" },
+    { "do": "press", "audio": "test-results/fixtures/silence.wav" },
     { "do": "wait", "ms": 1000 },
     { "do": "shot", "name": "無音中" },
     { "do": "holdUntilAudioEnd" },

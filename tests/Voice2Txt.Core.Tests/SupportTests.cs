@@ -115,14 +115,15 @@ public class AudioTests
     }
 
     [Fact]
-    public void 同梱の音声素材が読める()
+    public void 台本の音声素材はリポジトリに入れず_実行時に作る置き場を指す()
     {
-        var dir = Scenario.ResolvePath(System.IO.Path.Combine(AppContext.BaseDirectory, "x.json"), "tests/fixtures/audio");
-        var one = Audio.ReadWav16kMono(System.IO.Path.Combine(dir, "ja-one-sentence.wav"));
-        var sil = Audio.ReadWav16kMono(System.IO.Path.Combine(dir, "silence.wav"));
-        Assert.True(one.Length > Audio.SampleRate * 2);
-        Assert.True(Audio.PeakFrameRms(one) >= new AppSettings().SilenceThreshold);
-        Assert.True(Audio.PeakFrameRms(sil) < new AppSettings().SilenceThreshold);
+        // 素材(合成音声)は tools/MakeFixtures が test-results/fixtures/ に作る。リポジトリの中の音声を指す台本があれば、素材の無い clone で通らない
+        var dir = Scenario.ResolvePath(System.IO.Path.Combine(AppContext.BaseDirectory, "x.json"), "tests/scenarios");
+        var files = Directory.GetFiles(dir, "*.json");
+        Assert.NotEmpty(files);
+        foreach (var f in files)
+            foreach (var a in Scenario.Load(f).Actions.Where(a => a.Audio is not null))
+                Assert.True(a.Audio!.StartsWith("test-results/fixtures/"), $"{System.IO.Path.GetFileName(f)}: {a.Audio}");
     }
 }
 
@@ -349,6 +350,14 @@ public class VerificationTests
         Assert.True(File.Exists(scenario));
         var sc = Scenario.Load(scenario);
         Assert.Equal("junior-3", sc.Name);
-        Assert.True(File.Exists(Scenario.ResolvePath(scenario, sc.Actions.First(a => a.Do == "press").Audio!)));
+        // 素材(test-results/fixtures/)は実行時に作るので、同じ形の置き場を一時フォルダに作って解けることを確かめる
+        using var tmp = new TempDir();
+        var root = System.IO.Path.Combine(tmp.Path, "repo");
+        var sDir = Directory.CreateDirectory(System.IO.Path.Combine(root, "tests", "scenarios")).FullName;
+        var audio = sc.Actions.First(a => a.Do == "press").Audio!;
+        var wav = System.IO.Path.Combine(root, audio);
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(wav)!);
+        File.WriteAllBytes(wav, []);
+        Assert.Equal(System.IO.Path.GetFullPath(wav), System.IO.Path.GetFullPath(Scenario.ResolvePath(System.IO.Path.Combine(sDir, "junior-3.json"), audio)));
     }
 }

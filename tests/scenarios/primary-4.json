@@ -7,7 +7,7 @@
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "focus", "window": "textbox" },
-    { "do": "press", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "press", "audio": "test-results/fixtures/ja-one-sentence.wav" },
     { "do": "wait", "ms": 600 },
     { "do": "key", "key": "C" },
     { "do": "release" },

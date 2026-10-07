@@ -1,0 +1,171 @@
+using System.Globalization;
+using System.Speech.AudioFormat;
+using System.Speech.Synthesis;
+using System.Text;
+
+namespace Voice2Txt.Tools;
+
+/// <summary>
+/// 台本(tests/scenarios)が使う合成音声の素材を作る。Windows の System.Speech(日本語の声)で 16 kHz モノラル 16 bit に書く。
+/// 素材はリポジトリに入れず、テスト実行時に <c>test-results/fixtures/</c> へ作る(本物の声は入れない)。同じ PC・同じ声なら毎回同じバイト列になる。
+/// 合成の声は語を読み違えることがあるので、作るときに合成した読み(音素)を返す。正解文と違う読みになったら、その語をかなにして書き直す。
+/// </summary>
+public static class FixtureMaker
+{
+    /// <summary>リポジトリ直下からの素材の置き場(台本の audio はこの下を指す)。</summary>
+    public const string RelativeDir = "test-results/fixtures";
+
+    /// <summary>名前 = 合成に渡す文(台本の期待はこれと同じ文を書く)。</summary>
+    public static readonly IReadOnlyDictionary<string, string> Items = new Dictionary<string, string>
+    {
+        ["ja-one-sentence"] = "今日の会議の資料をチャットで送ります。",
+        ["utt-01"] = "今日の設計レビューを始めます。",
+        ["utt-02"] = "認証まわりのモジュールを分割する案について確認したいです。",
+        ["utt-03"] = "テストの結果を共有しますので、各自で目を通してください。",
+        ["utt-04"] = "来週のリリースに向けて、残りの課題を洗い出しましょう。",
+        ["utt-05"] = "ログの出力形式を統一する必要があると考えています。",
+        ["utt-06"] = "この資料は後でチャットに貼り付けておきます。",
+        ["utt-07"] = "画面の配置について意見をください。",
+        ["utt-08"] = "明日の打ち合わせは会議室でやります。",
+        ["utt-09"] = "新しい担当者を紹介します。",
+        ["utt-10"] = "以上で報告を終わります。",
+        ["utt-11"] = "同じ窓の別の入力欄に貼られることを確認します。",
+        ["utt-12"] = "申請書は、ええと、ええと、総務に出してください。",
+        ["utt-13"] = "はい、了解です。",
+        ["utt-14"] = "お願いします。",
+        ["utt-15"] = "テストの結果を共有しますので、各自で目を通してください。以上で報告を終わります。",
+        ["utt-16"] = "新しい資料は、共有フォルダに保存してあります。",
+        ["utt-17"] = "ええ、あの、来週の打ち合わせは、えっと、会議室でやります。",
+        ["utt-18"] = "設計書の第三章に、認証まわりのモジュールを分割する案と、ログの出力形式を統一する案を追記しましたので、確認をお願いします。",
+    };
+
+    /// <summary>無音だけの素材(秒)。無音で押して離したら取り消し、を確かめる。</summary>
+    public static readonly IReadOnlyDictionary<string, double> Silences = new Dictionary<string, double> { ["silence"] = 3 };
+
+    /// <summary>前後に置く無音(秒)。押してからしばらく黙り、話し終えてもしばらく離さない発話(長い無音で音声に無い文が足されないか)。</summary>
+    public static readonly IReadOnlyDictionary<string, (int Head, int Tail)> Pads = new Dictionary<string, (int, int)>
+    {
+        ["utt-15"] = (5, 20),
+        ["utt-16"] = (1, 1),
+    };
+
+    /// <summary>
+    /// 小さい声(最も大きい 30 ms 区間の RMS: 最初の息継ぎまで, その後)。無音の取り消しのしきい値(初期値 0.01)を少し超えるだけの声で話し始め、
+    /// 息継ぎの後はしきい値を下回る声になる録音で、後ろの語が削られないか。
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, (double Level, double Tail)> Levels = new Dictionary<string, (double, double)>
+    {
+        ["utt-16"] = (0.015, 0.006),
+    };
+
+    public static IEnumerable<string> Names => Items.Keys.Concat(Silences.Keys);
+
+    /// <summary>
+    /// 足りない素材を <paramref name="dir"/> に作る(<paramref name="force"/> なら全部作り直す)。<paramref name="only"/> を渡せばその名前だけ。
+    /// 作った素材ごとに "名前: 読み" を <paramref name="log"/> へ返す。
+    /// </summary>
+    public static int Ensure(string dir, bool force = false, IReadOnlyCollection<string>? only = null, Action<string>? log = null)
+    {
+        Directory.CreateDirectory(dir);
+        int made = 0;
+        foreach (var name in Names)
+        {
+            if (only is { Count: > 0 } && !only.Contains(name)) continue;
+            var wav = Path.Combine(dir, name + ".wav");
+            if (!force && File.Exists(wav)) continue;
+            var tmp = wav + ".tmp";
+            string said;
+            if (Silences.TryGetValue(name, out var sec)) { WriteSilence(tmp, sec); said = $"無音 {sec} 秒"; }
+            else
+            {
+                var pad = Pads.TryGetValue(name, out var p) ? p : (0, 0);
+                said = Speak(Items[name], tmp, pad.Item1, pad.Item2);
+                if (Levels.TryGetValue(name, out var lv)) said += $" ({Quiet(tmp, lv.Level, lv.Tail)})";
+            }
+            File.Move(tmp, wav, overwrite: true); // 並行して走る別の実行が書きかけを読まないよう、書き終えてから置く
+            made++;
+            log?.Invoke($"{name}: {said}");
+        }
+        return made;
+    }
+
+    /// <summary>リポジトリ直下(Voice2Txt.sln のあるフォルダ)を <paramref name="start"/> から上へ探す。</summary>
+    public static string? FindRepoRoot(string start)
+    {
+        for (var d = new DirectoryInfo(Path.GetFullPath(start)); d is not null; d = d.Parent)
+            if (File.Exists(Path.Combine(d.FullName, "Voice2Txt.sln"))) return d.FullName;
+        return null;
+    }
+
+    private static string Speak(string text, string wav, int headSec, int tailSec)
+    {
+        using var s = new SpeechSynthesizer();
+        foreach (var v in s.GetInstalledVoices())
+            if (v.VoiceInfo.Culture.Name == "ja-JP") { s.SelectVoice(v.VoiceInfo.Name); break; }
+        if (s.Voice.Culture.Name != "ja-JP") throw new InvalidOperationException("日本語(ja-JP)の音声合成の声が入っていない(Windows の設定 → 時刻と言語 → 音声 で日本語の音声を追加する)");
+        s.Rate = 0;
+        var sb = new StringBuilder();
+        s.PhonemeReached += (_, e) => sb.Append(e.Phoneme);
+        s.SetOutputToWaveFile(wav, new SpeechAudioFormatInfo(16000, AudioBitsPerSample.Sixteen, AudioChannel.Mono));
+        var p = new PromptBuilder(new CultureInfo("ja-JP"));
+        if (headSec > 0) p.AppendBreak(TimeSpan.FromSeconds(headSec));
+        p.AppendText(text);
+        if (tailSec > 0) p.AppendBreak(TimeSpan.FromSeconds(tailSec));
+        s.Speak(p);
+        s.SetOutputToNull();
+        return sb.ToString();
+    }
+
+    /// <summary>16 kHz モノラル 16 bit の無音(標準の 44 バイトのヘッダ)。</summary>
+    private static void WriteSilence(string wav, double seconds)
+    {
+        int bytes = (int)(seconds * 16000) * 2;
+        using var w = new BinaryWriter(File.Create(wav));
+        w.Write("RIFF"u8); w.Write(36 + bytes); w.Write("WAVE"u8);
+        w.Write("fmt "u8); w.Write(16); w.Write((short)1); w.Write((short)1); w.Write(16000); w.Write(32000); w.Write((short)2); w.Write((short)16);
+        w.Write("data"u8); w.Write(bytes); w.Write(new byte[bytes]);
+    }
+
+    /// <summary>
+    /// 小さい声・遠いマイクの録音: 最も大きい 30 ms 区間の RMS が level になるまで音量を下げる。
+    /// tail &gt; 0 なら、最初の息継ぎ(0.15 秒以上の無音)より後ろを、最も大きい区間が tail になるまでさらに下げる(話すうちに声が小さくなる)。
+    /// </summary>
+    private static string Quiet(string wav, double level, double tail)
+    {
+        var b = File.ReadAllBytes(wav);
+        int o = 12;
+        while (Encoding.ASCII.GetString(b, o, 4) != "data") o += 8 + BitConverter.ToInt32(b, o + 4);
+        int d = o + 8, n = BitConverter.ToInt32(b, o + 4) / 2, frame = 480;
+        var x = new double[n];
+        for (int j = 0; j < n; j++) x[j] = BitConverter.ToInt16(b, d + j * 2) / 32768.0;
+        int frames = (n + frame - 1) / frame;
+        var rms = new double[frames];
+        for (int f = 0; f < frames; f++)
+        {
+            double acc = 0; int a = f * frame, m = Math.Min(n, a + frame) - a;
+            for (int j = a; j < a + m; j++) acc += x[j] * x[j];
+            rms[f] = Math.Sqrt(acc / m);
+        }
+        double peak = 0; foreach (var r in rms) peak = Math.Max(peak, r);
+        int split = frames;
+        if (tail > 0)
+        {
+            int first = 0; while (first < frames && rms[first] < peak * 0.05) first++;
+            for (int f = first, quiet = 0; f < frames; f++)
+            {
+                quiet = rms[f] < peak * 0.01 ? quiet + 1 : 0;
+                if (quiet >= 5) { split = f; break; }
+            }
+        }
+        double head = 0, rest = 0;
+        for (int f = 0; f < frames; f++) { if (f < split) head = Math.Max(head, rms[f]); else rest = Math.Max(rest, rms[f]); }
+        double g1 = level / peak, g2 = rest > 0 ? tail / rest : g1;
+        for (int j = 0; j < n; j++)
+        {
+            short v = (short)Math.Round(x[j] * 32768.0 * (j / frame < split ? g1 : g2));
+            b[d + j * 2] = (byte)(v & 0xFF); b[d + 1 + j * 2] = (byte)((v >> 8) & 0xFF);
+        }
+        File.WriteAllBytes(wav, b);
+        return string.Format(CultureInfo.InvariantCulture, "x{0:N3}, {1:N1} 秒から x{2:N3}", g1, split * 0.03, g2);
+    }
+}

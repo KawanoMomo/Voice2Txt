@@ -7,7 +7,7 @@
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "focus", "window": "textbox" },
-    { "do": "press", "audio": "tests/fixtures/audio/utt-11.wav" },
+    { "do": "press", "audio": "test-results/fixtures/utt-11.wav" },
     { "do": "wait", "ms": 1000 },
     { "do": "focus", "window": "textbox" },
     { "do": "holdUntilAudioEnd" },
