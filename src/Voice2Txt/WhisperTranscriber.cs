@@ -16,6 +16,8 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
     private readonly WhisperProcessor? _recover;
     private readonly double _silenceThreshold;
     private readonly SemaphoreSlim _one = new(1, 1);
+    // 途中経過で拾い直した区間の結果。確定版で同じ音の区間なら復号し直さない(離してから届くまでに 2 回目の復号を足さない)
+    private readonly SpanCache _spans = new();
 
     public string Runtime { get; }
 
@@ -54,7 +56,12 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
         _ => null,
     };
 
-    public async Task<string> TranscribeAsync(float[] samples16k, IProgress<string>? partial, CancellationToken ct)
+    public Task<string> TranscribeAsync(float[] samples16k, IProgress<string>? partial, CancellationToken ct) => RunAsync(samples16k, false, ct);
+
+    /// <summary>途中経過: 英字に読めた区間は先に拾い直して覚えておく(確定版がその区間を飛ばしても、離した後に 2 回目の復号を回さない)。</summary>
+    public Task<string> TranscribeInterimAsync(float[] samples16k, CancellationToken ct) => RunAsync(samples16k, true, ct);
+
+    private async Task<string> RunAsync(float[] samples16k, bool prefetch, CancellationToken ct)
     {
         await _one.WaitAsync(ct);
         try
@@ -65,8 +72,8 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
                 await foreach (var seg in _processor.ProcessAsync(samples16k, ct)) sb.Append(seg.Text);
                 return sb.ToString().Trim();
             }
-            var r = await Recovery.TranscribeAsync(samples16k, _silenceThreshold, this, ct);
-            if (r.Recovered > 0) AppLog.Write($"recovered spans={r.Recovered}"); // 本文は書かない
+            var r = await Recovery.TranscribeAsync(samples16k, _silenceThreshold, this, ct, _spans, prefetch);
+            if (r.Recovered > 0) AppLog.Write($"recovered spans={r.Recovered} reused={r.Reused}"); // 本文は書かない
             return r.Text;
         }
         finally { _one.Release(); }
@@ -85,7 +92,9 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
     {
         var sb = new StringBuilder();
         double noSpeech = 0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         await foreach (var seg in _recover!.ProcessAsync(samples, ct)) { sb.Append(seg.Text); noSpeech = Math.Max(noSpeech, seg.NoSpeechProbability); }
+        AppLog.Write($"span-decode ms={sw.ElapsedMilliseconds} sec={samples.Length / (double)Audio.SampleRate:F1}"); // 本文は書かない
         return (sb.ToString(), noSpeech);
     }
 

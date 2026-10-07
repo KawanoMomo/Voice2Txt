@@ -149,6 +149,93 @@ public class RecoveryTests
     }
 
     [Fact]
+    public async Task 途中経過で拾い直した区間は_確定版で同じ音なら復号し直さない()
+    {
+        var cache = new SpanCache();
+        var d = new FakeDecoder { Main = _ => [Skipped], Span = (" Please confirm the hotel booking.", 0.01) };
+        // 途中経過: 押下から 6 秒の写し(英文の区間は終わっている)
+        var interim = await Recovery.TranscribeAsync(Mixed[..(6 * Rate)], 0.01, d, default, cache);
+        Assert.Equal(1, interim.Recovered);
+        Assert.Single(d.SpanCalls);
+        // 確定版: 同じ英文の区間は前の結果を使う(2 回目の復号をしない)
+        var final = await Recovery.TranscribeAsync(Mixed, 0.01, d, default, cache);
+        Assert.Equal("来週の出張について、Please confirm the hotel booking.と英語で書かれたメール。", final.Text);
+        Assert.Equal(1, final.Recovered);
+        Assert.Equal(1, final.Reused);
+        Assert.Single(d.SpanCalls);
+    }
+
+    [Fact]
+    public async Task 区間の音が違えば前の結果を使わない()
+    {
+        var cache = new SpanCache();
+        var d = new FakeDecoder { Main = _ => [Skipped], Span = (" Please confirm the hotel booking.", 0.01) };
+        await Recovery.TranscribeAsync(Mixed, 0.01, d, default, cache);
+        var other = (float[])Mixed.Clone();
+        other[3 * Rate] = 0.29f; // 英文の区間の中の 1 サンプルだけ違う
+        var r = await Recovery.TranscribeAsync(other, 0.01, d, default, cache);
+        Assert.Equal(2, d.SpanCalls.Count);
+        Assert.Equal(0, r.Reused);
+    }
+
+    [Fact]
+    public void 覚えておく区間の数には上限があり_古いものから忘れる()
+    {
+        var cache = new SpanCache(capacity: 2);
+        float[] a = [1, 2], b = [3, 4], c = [5, 6];
+        cache.Add(a, ("A", 0)); cache.Add(b, ("B", 0)); cache.Add(c, ("C", 0));
+        Assert.False(cache.TryGet([1, 2], out _));
+        Assert.True(cache.TryGet([3, 4], out var got));
+        Assert.Equal("B", got.Text);
+        Assert.True(cache.TryGet([5, 6], out _));
+    }
+
+    // 途中経過の復号は英文の区間を英字で読めた(確定版では飛ばすことがある)
+    private static readonly DecodedSegment Latin = Seg((0.4, "来週"), (1.0, "出張"), (1.4, "について、"), (2.5, " Please"), (3.0, " confirm"), (3.8, " booking."), (5.3, "と英語で"));
+
+    [Fact]
+    public async Task 途中経過で英字に読めた区間は先に拾い直しておき_確定版が飛ばしたら使う()
+    {
+        var cache = new SpanCache();
+        var d = new FakeDecoder { Main = _ => [Latin], Span = (" Please confirm the hotel booking.", 0.01) };
+        var interim = await Recovery.TranscribeAsync(Mixed[..(6 * Rate)], 0.01, d, default, cache, prefetch: true);
+        Assert.Equal(Latin.Text, interim.Text); // 途中経過の文字列はそのまま
+        Assert.Equal(0, interim.Recovered);
+        Assert.Single(d.SpanCalls);
+        d.Main = _ => [Skipped];
+        var final = await Recovery.TranscribeAsync(Mixed, 0.01, d, default, cache);
+        Assert.Equal("来週の出張について、Please confirm the hotel booking.と英語で書かれたメール。", final.Text);
+        Assert.Equal(1, final.Reused);
+        Assert.Single(d.SpanCalls);
+    }
+
+    [Fact]
+    public async Task 先に拾い直すのは英字に読めて_終わった区間だけ()
+    {
+        var d = new FakeDecoder { Main = _ => [Latin], Span = ("x", 0) };
+        // 英文の区間がまだ終わっていない(写しの終わりから 0.5 秒経っていない)
+        await Recovery.TranscribeAsync(Mixed[..(int)(4.2 * Rate)], 0.01, d, default, new SpanCache(), prefetch: true);
+        Assert.Empty(d.SpanCalls);
+        // 日本語に読めた区間
+        d.Main = _ => [Seg((0.4, "来週"), (2.5, "会議"), (3.5, "します"), (5.3, "と英語で"))];
+        await Recovery.TranscribeAsync(Mixed, 0.01, d, default, new SpanCache(), prefetch: true);
+        Assert.Empty(d.SpanCalls);
+        // 確定版(prefetch なし)では先に拾い直さない
+        d.Main = _ => [Latin];
+        await Recovery.TranscribeAsync(Mixed, 0.01, d, default, new SpanCache());
+        Assert.Empty(d.SpanCalls);
+    }
+
+    [Fact]
+    public async Task 止められたら拾い直しの復号を始めない()
+    {
+        using var cts = new CancellationTokenSource();
+        var d = new FakeDecoder { Main = _ => { cts.Cancel(); return [Skipped]; }, Span = (" Please confirm.", 0) };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Recovery.TranscribeAsync(Mixed, 0.01, d, cts.Token));
+        Assert.Empty(d.SpanCalls);
+    }
+
+    [Fact]
     public void 台本の_contains_に無い語を失敗にする()
     {
         var e = new Expectation { Deliveries = [new() { Text = "来週の出張について、と英語で", MinSimilarity = 0.1, Contains = ["hotel booking"] }] };

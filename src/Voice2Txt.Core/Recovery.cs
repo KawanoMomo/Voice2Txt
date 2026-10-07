@@ -25,8 +25,46 @@ public interface ISpanDecoder
     Task<(string Text, double NoSpeech)> DecodeSpanAsync(float[] samples, CancellationToken ct);
 }
 
-/// <summary>拾い直しを済ませた確定版の文字列と、拾い直して差し込んだ区間の数。</summary>
-public sealed record RecoveredText(string Text, int Recovered);
+/// <summary>拾い直しを済ませた確定版の文字列と、拾い直して差し込んだ区間の数(うち <see cref="Reused"/> は前の結果を使い回した数)。</summary>
+public sealed record RecoveredText(string Text, int Recovered, int Reused = 0);
+
+/// <summary>
+/// 拾い直しの復号の結果を、切り出した音声ごとに覚えておく。押下中の途中経過で拾い直した区間は、離した後の確定版でも同じ音で切り出されるので、
+/// 2 回目の復号をせずに前の結果を使う(離してから届くまでを延ばさない)。音が 1 サンプルでも違えば使わない(中身で照合する)。
+/// 古いものから忘れる。スレッドセーフ。
+/// </summary>
+public sealed class SpanCache(int capacity = SpanCache.DefaultCapacity)
+{
+    /// <summary>覚えておく区間の数の既定(1 つの発話の拾い直しは数区間。数秒の音声 × この数だけメモリを持つ)。</summary>
+    public const int DefaultCapacity = 16;
+
+    private readonly LinkedList<(float[] Samples, (string Text, double NoSpeech) Result)> _items = new();
+
+    public bool TryGet(float[] samples, out (string Text, double NoSpeech) result)
+    {
+        lock (_items)
+        {
+            for (var n = _items.First; n is not null; n = n.Next)
+            {
+                if (!n.Value.Samples.AsSpan().SequenceEqual(samples)) continue;
+                _items.Remove(n); _items.AddFirst(n);
+                result = n.Value.Result;
+                return true;
+            }
+        }
+        result = default;
+        return false;
+    }
+
+    public void Add(float[] samples, (string Text, double NoSpeech) result)
+    {
+        lock (_items)
+        {
+            _items.AddFirst(((float[])samples.Clone(), result));
+            while (_items.Count > Math.Max(1, capacity)) _items.RemoveLast();
+        }
+    }
+}
 
 /// <summary>
 /// 拾い直し: 声があるのに確定版に文字が 1 つも無い区間を、その区間だけ文字起こしし直して確定版の該当位置へ差し込む。
@@ -61,8 +99,10 @@ public static class Recovery
     /// 確定版を作る: 全体を復号し、復号が途中で返し終えたら最後の区切りの終わりから続きを復号してつなぐ(whisper.cpp が窓を送るのと同じ位置)。
     /// その後、文字の無い声の区間を拾い直して差し込む。
     /// <paramref name="threshold"/> は無音のしきい値(設定値。声の区間は <see cref="Audio.VoiceLevel"/> で決める)。
+    /// <paramref name="cache"/> があれば、同じ音で切り出した区間は前の拾い直しの結果を使う(途中経過で済ませた分を確定版で復号し直さない)。
+    /// <paramref name="prefetch"/>(途中経過のときだけ真)なら、語が英字に読めた終わった区間も拾い直して <paramref name="cache"/> に覚えておく(差し込まない)。
     /// </summary>
-    public static async Task<RecoveredText> TranscribeAsync(float[] samples, double threshold, ISpanDecoder decoder, CancellationToken ct)
+    public static async Task<RecoveredText> TranscribeAsync(float[] samples, double threshold, ISpanDecoder decoder, CancellationToken ct, SpanCache? cache = null, bool prefetch = false)
     {
         int rate = Audio.SampleRate;
         var spans = VoicedSpans(samples, Audio.VoiceLevel(samples, threshold));
@@ -98,18 +138,45 @@ public static class Recovery
         if (words.Count == 0) return new(text.Trim(), 0); // 語の時刻が無い(エンジンが出せない・文字が無い): 拾い直さない
 
         var inserts = new List<(int Offset, string Text)>();
+        int reused = 0;
         foreach (var (s, e) in spans)
         {
             double a = (double)s / rate, b = (double)e / rate;
             if (b - a < MinSpanSeconds) continue;
-            if (words.Any(w => w.At >= a - TokenSlackSeconds && w.At <= b + TokenSlackSeconds)) continue;
+            var inSpan = words.Where(w => w.At >= a - TokenSlackSeconds && w.At <= b + TokenSlackSeconds).ToList();
             int pad = (int)(SpanPadSeconds * rate);
             int cs = Math.Max(0, s - pad), ce = Math.Min(samples.Length, e + pad);
-            var cut = new float[Math.Max(ce - cs, (int)(Audio.MinDecodeSeconds * rate))];
-            Array.Copy(samples, cs, cut, 0, ce - cs);
-            var (got, noSpeech) = await decoder.DecodeSpanAsync(cut, ct);
+            float[] Cut()
+            {
+                var c = new float[Math.Max(ce - cs, (int)(Audio.MinDecodeSeconds * rate))];
+                Array.Copy(samples, cs, c, 0, ce - cs);
+                return c;
+            }
+            // 止められた(途中経過が離しで打ち切られた)なら次の復号を始めない: 確定版をエンジンの空きで待たせない
+            ct.ThrowIfCancellationRequested();
+            if (inSpan.Count > 0)
+            {
+                // 途中経過: 英字に読めた区間は、確定版(前後に日本語が続く)の復号が飛ばすことがある。終わった区間なら先に拾い直して覚えておく
+                if (prefetch && cache is not null && samples.Length - e >= PauseSeconds * rate && MostlyLatin(inSpan.Select(w => w.Text)))
+                {
+                    var c = Cut();
+                    if (!cache.TryGet(c, out _)) cache.Add(c, await decoder.DecodeSpanAsync(c, ct));
+                }
+                continue;
+            }
+            var cut = Cut();
+            bool hit = false;
+            (string Text, double NoSpeech) res;
+            if (cache is not null && cache.TryGet(cut, out res)) hit = true;
+            else
+            {
+                res = await decoder.DecodeSpanAsync(cut, ct);
+                cache?.Add(cut, res);
+            }
+            var (got, noSpeech) = res;
             got = got.Trim();
             if (!Acceptable(got, noSpeech, text)) continue;
+            if (hit) reused++;
             // 差し込む位置: 区間より後ろで最初の語の前(区間の中に付いた句読点は前の文に残す)。後ろに語が無ければ末尾
             var next = words.FirstOrDefault(w => w.At >= a);
             int at = next.Text is null ? text.TrimEnd().Length : next.Offset;
@@ -117,7 +184,7 @@ public static class Recovery
         }
         foreach (var (at, got) in inserts.OrderByDescending(x => x.Offset))
             text = text.Insert(at, Joint(text, at, got));
-        return new(text.Trim(), inserts.Count);
+        return new(text.Trim(), inserts.Count, reused);
     }
 
     /// <summary>
@@ -167,6 +234,19 @@ public static class Recovery
 
     /// <summary>語の文字列を探すとき、直前の語の終わりから読み飛ばしてよい文字数(割れた多バイト文字の分)。</summary>
     private const int MaxAlignSkip = 8;
+
+    /// <summary>語の文字の半分以上が英字か(日本語に固定した復号が、別の言語の区間を英字のまま書いた)。</summary>
+    public static bool MostlyLatin(IEnumerable<string> words)
+    {
+        int latin = 0, all = 0;
+        foreach (var c in words.SelectMany(w => w))
+        {
+            if (!char.IsLetter(c) && c != '�') continue;
+            all++;
+            if (c < 0x80) latin++;
+        }
+        return all > 0 && latin * 2 >= all;
+    }
 
     /// <summary>文字を持つ語か(句読点・空白・特殊な語は数えない。割れた多バイト文字は数える)。</summary>
     public static bool IsWord(string? t) =>
