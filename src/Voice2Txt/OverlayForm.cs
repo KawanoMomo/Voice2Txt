@@ -1,6 +1,7 @@
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using Voice2Txt.Core;
+using Voice2Txt.Core.Verification;
 
 namespace Voice2Txt;
 
@@ -107,7 +108,7 @@ internal sealed class OverlayForm : Form
         int w = PadX + IconW + Gap + PartsWidth(v.Parts(_talkKeyName)) + PadX, h = Math.Max(36, Font.Height + 16);
         var wa = Screen.PrimaryScreen!.WorkingArea;
         Bounds = new Rectangle(wa.Left + (wa.Width - w) / 2, wa.Bottom - 18 - h, w, h);
-        using var path = Rounded(new Rectangle(0, 0, w, h), 18);
+        using var path = Rounded(new Rectangle(0, 0, w, h), Radius);
         Region = new Region(path);
     }
 
@@ -185,11 +186,17 @@ internal sealed class OverlayForm : Form
         }
     }
 
-    /// <summary>今の表示を PNG に保存する。まず画面から撮り(実機のスクショ)、撮れなければ自前の描画で代える。戻り値は "screen" か "render"。</summary>
+    /// <summary>
+    /// 今の表示を PNG に保存する。まず画面から撮り(実機のスクショ)、それが自分の表示と言えるときだけ使う。
+    /// 撮れない・一色・上に別の窓が重なって自前の描画と食い違う(並行して走る別の検証モードのオーバーレイ等)ときは自前の描画で代える。
+    /// 戻り値は "screen" か "render (理由)"。重なりなら理由に食い違いの割合と上に重なった窓を残す。
+    /// </summary>
     public string SaveScreenshot(string path)
     {
         Native.DwmFlush();
         var b = Bounds;
+        using var own = new Bitmap(Math.Max(1, b.Width), Math.Max(1, b.Height), PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(own)) PaintContent(g, own.Size);
         string reason;
         try
         {
@@ -201,14 +208,52 @@ internal sealed class OverlayForm : Form
                 try { if (!Native.BitBlt(dst, 0, 0, b.Width, b.Height, src, b.X, b.Y, Native.SRCCOPY | Native.CAPTUREBLT)) throw new InvalidOperationException("BitBlt 失敗"); }
                 finally { Native.ReleaseDC(0, src); g.ReleaseHdc(dst); }
             }
-            if (!IsUniform(bmp)) { bmp.Save(path, ImageFormat.Png); return "screen"; }
-            reason = "uniform " + bmp.GetPixel(0, 0).Name;
+            if (IsUniform(bmp)) reason = "uniform " + bmp.GetPixel(0, 0).Name;
+            else
+            {
+                double mismatch = OverlayCapture.MismatchRatio(Pixels(bmp), Pixels(own), b.Width, b.Height, Radius);
+                AppLog.Write($"capture-check mismatch={mismatch:0.0000}");
+                if (OverlayCapture.LooksLikeOwn(mismatch)) { bmp.Save(path, ImageFormat.Png); return "screen"; }
+                var above = WindowsAbove(b);
+                reason = $"overlapped: {mismatch:P0} differs from own drawing; above: {(above.Count == 0 ? "unknown" : string.Join(", ", above))}";
+            }
         }
         catch (Exception ex) { reason = ex.GetType().Name + ": " + ex.Message; }
-        using var r = new Bitmap(Math.Max(1, b.Width), Math.Max(1, b.Height));
-        using (var g = Graphics.FromImage(r)) PaintContent(g, r.Size);
-        r.Save(path, ImageFormat.Png);
+        own.Save(path, ImageFormat.Png);
         return $"render ({reason})";
+    }
+
+    private const int Radius = 18;
+
+    private static int[] Pixels(Bitmap bmp)
+    {
+        var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            var px = new int[bmp.Width * bmp.Height];
+            for (int y = 0; y < bmp.Height; y++)
+                System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + y * data.Stride, px, y * bmp.Width, bmp.Width);
+            return px;
+        }
+        finally { bmp.UnlockBits(data); }
+    }
+
+    /// <summary>z 順で自分より上にあり、見えていて自分の範囲に重なる別プロセスの窓("プロセス名#pid"、最大 3 つ)。</summary>
+    private List<string> WindowsAbove(Rectangle bounds)
+    {
+        var found = new List<string>();
+        int self = Environment.ProcessId;
+        for (nint h = Native.GetWindow(Handle, Native.GW_HWNDPREV); h != 0 && found.Count < 3; h = Native.GetWindow(h, Native.GW_HWNDPREV))
+        {
+            if (!Native.IsWindowVisible(h) || !Native.GetWindowRect(h, out var r)) continue;
+            if (!bounds.IntersectsWith(Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom))) continue;
+            Native.GetWindowThreadProcessId(h, out uint pid);
+            if (pid == self) continue;
+            string name;
+            try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { name = "?"; }
+            found.Add($"{name}#{pid}");
+        }
+        return found;
     }
 
     private static bool IsUniform(Bitmap bmp)
