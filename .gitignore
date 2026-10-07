@@ -9,5 +9,4 @@ models/
 *.mp3
 *.m4a
 *.flac
-!tests/fixtures/**
 publish/

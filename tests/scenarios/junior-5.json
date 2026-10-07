@@ -8,11 +8,11 @@
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "focus", "window": "textbox" },
-    { "do": "press", "key": "RControlKey", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "press", "key": "RControlKey", "audio": "test-results/fixtures/ja-one-sentence.wav" },
     { "do": "wait", "ms": 1000 },
     { "do": "release", "key": "RControlKey" },
     { "do": "wait", "ms": 500 },
-    { "do": "press", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "press", "audio": "test-results/fixtures/ja-one-sentence.wav" },
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 200 },
     { "do": "release" },

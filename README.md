@@ -6,13 +6,14 @@
 - 用語集: `CONTEXT.md`(文書と画面の語はここに揃える)
 - オーバーレイの見本: `docs/moc/2026-10-06-ptt-overlay.html`
 - ADR ドラフト: `docs/adr/drafts/`
+- ライセンス: MIT(`LICENSE`)。依存・実行時に取得するもの(モデルの重み・NVIDIA CUDA の実行時ライブラリ)のライセンスは `THIRD_PARTY_NOTICES.md`
 
 ## 構成
 - `src/Voice2Txt/` — 常駐アプリ(トレイ・オーバーレイ・トークキー・録音・貼り付け・検証モード)
 - `src/Voice2Txt.Core/` — 発話の順序・取り消し・貼り付け先の判定・退避のロジック(キー・マイク・クリップボード・前面ウィンドウ・エンジンは差し替え可能)
 - `tests/Voice2Txt.Core.Tests/` — unit(`dotnet test`)
 - `tests/scenarios/` — 検証モードの台本(`{persona}-{手順}.json`)。`tools/Verify` が回す
-- `tests/fixtures/audio/` — 合成音声の素材(`ja-one-sentence.wav`: 1 文、`silence.wav`: 無音 3 秒、`utt-01`〜`utt-16.wav`: 連投・退避・言い直し用の短い文など、`utt-18.wav`: 途中経過を見る約 11 秒の長い文。`make-fixtures.ps1` で作り直せる。文は同スクリプト内。合成の読みを表示するので、正解文と違う読みになっていないか確かめる)
+- `tools/MakeFixtures/` — 台本が使う合成音声の素材を `test-results/fixtures/` に作る(Windows の日本語の音声合成。素材はリポジトリに入れない。`tools/Verify` も実行前に足りないものを作る)。`ja-one-sentence.wav`: 1 文、`silence.wav`: 無音 3 秒、`utt-01`〜`utt-18.wav`: 連投・退避・言い直し・言い淀み・途中経過用の文。文は `tools/MakeFixtures/FixtureMaker.cs` 内。`dotnet run --project tools/MakeFixtures -- --force` で作り直すと合成の読みを表示するので、正解文と違う読みになっていないか確かめる
 
 ## 使い方
 - 起動するとタスクトレイに常駐する。初回はモデル(`large-v3-turbo`)を取得元からダウンロードし、ハッシュで検証してから読み込む(トレイのツールチップに進み具合)
@@ -49,7 +50,7 @@
 結果の `passedKeys`(素通ししたキー。`"RControlKey down"` の形)・`sentKeys`(合成して送ったキー)・`warnings`(例: talkKey を読めない)に残る。
 期待(`expect`): `deliveries` / `textbox`(`text` と `minSimilarity`、`notContains`: 残っていてはならない語)/ `states` / `stateTexts`(オーバーレイの文言に含まれる文字列)/ `forbiddenStates` / `cancellations` / `passedKeys` / `sentKeys` / `warnings` / `maxReleaseToDeliverMs` / `version`(版。`versionFile: "VERSION"` ならそのファイルから作る。result.json の `version` と `trayTooltip` に出ていること)/ `screenshots` / `shots`(台本の `shot` で撮ったものを名前で引く。`state`・`minMeter` / `maxMeter`(音量バー)・`minInterimChars` / `maxInterimChars`(途中経過の文字数))。
 
-全部の台本を回す: `dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios tests/scenarios --out <dir>`(`passed: 名前` / `failed: 名前` と理由、最後に `passed=N failed=M`、`<dir>/summary.json`)
+全部の台本を回す: `dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios tests/scenarios --out <dir>`(`passed: 名前` / `failed: 名前` と理由、最後に `passed=N failed=M`、`<dir>/summary.json`)。台本の `audio` は `test-results/fixtures/` の合成音声を指し、足りなければ実行前に作る(`fixtures: N 本を作った`。日本語の音声合成の声が要る)
 
 ## 開発
-このリポジトリは `E:\04_Loop` の自律開発ループが育てる。main に直接コミットしない(builder が worktree で作り、マージする)。
+このリポジトリは自律開発ループが育てる。

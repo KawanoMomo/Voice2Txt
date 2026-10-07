@@ -4,6 +4,7 @@ using Voice2Txt.Core;
 using Voice2Txt.Core.Verification;
 
 // tools/Verify — 検証モードの台本(tests/scenarios/*.json)を順に実行し、期待と比べて passed / failed を出す。
+// 台本の音声素材(test-results/fixtures/)が足りなければ、先に tools/MakeFixtures と同じ手順で作る。
 //   dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios <file|dir>... --out <dir>
 // 終了コード: 全部 passed なら 0、1 件でも failed なら 1、使い方の誤りは 2。
 
@@ -33,6 +34,13 @@ var files = inputs.SelectMany(p => Directory.Exists(p)
     .Select(Path.GetFullPath).ToList();
 outDir = Path.GetFullPath(outDir);
 Directory.CreateDirectory(outDir);
+
+// 台本が使う合成音声の素材(リポジトリに入れない)を、足りなければ test-results/fixtures/ に作る
+foreach (var root in files.Select(f => Voice2Txt.Tools.FixtureMaker.FindRepoRoot(Path.GetDirectoryName(f)!)).OfType<string>().Distinct())
+{
+    int made = Voice2Txt.Tools.FixtureMaker.Ensure(Path.Combine(root, Voice2Txt.Tools.FixtureMaker.RelativeDir));
+    if (made > 0) Console.WriteLine($"fixtures: {made} 本を作った({Path.Combine(root, Voice2Txt.Tools.FixtureMaker.RelativeDir)})");
+}
 
 var summary = new List<object>();
 int passed = 0, failed = 0;

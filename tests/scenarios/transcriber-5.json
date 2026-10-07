@@ -7,10 +7,10 @@
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "focus", "window": "textbox" },
-    { "do": "press", "audio": "tests/fixtures/audio/utt-07.wav" },
+    { "do": "press", "audio": "test-results/fixtures/utt-07.wav" },
     { "do": "holdUntilAudioEnd" },
     { "do": "release" },
-    { "do": "press", "audio": "tests/fixtures/audio/utt-08.wav" },
+    { "do": "press", "audio": "test-results/fixtures/utt-08.wav" },
     { "do": "holdUntilAudioEnd" },
     { "do": "release" },
     { "do": "waitIdle", "timeoutMs": 300000 }

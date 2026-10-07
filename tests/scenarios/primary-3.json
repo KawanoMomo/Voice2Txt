@@ -8,11 +8,11 @@
   "actions": [
     { "do": "waitModel", "timeoutMs": 840000 },
     { "do": "focus", "window": "textbox" },
-    { "do": "press", "audio": "tests/fixtures/audio/utt-01.wav" },
+    { "do": "press", "audio": "test-results/fixtures/utt-01.wav" },
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 150 },
     { "do": "release" },
-    { "do": "press", "audio": "tests/fixtures/audio/utt-04.wav" },
+    { "do": "press", "audio": "test-results/fixtures/utt-04.wav" },
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 150 },
     { "do": "release" },
