@@ -89,13 +89,23 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
         return res;
     }
 
-    async Task<(string Text, double NoSpeech)> ISpanDecoder.DecodeSpanAsync(float[] samples, CancellationToken ct)
+    Task<(string Text, double NoSpeech)> ISpanDecoder.DecodeSpanAsync(float[] samples, CancellationToken ct) => RecoverAsync(samples, "span-decode", ct);
+
+    // 語の穴は日本語の発話の中なので、拾い直しの processor を日本語に固定して使う(言語の判定の符号化を省く)。終われば自動判定に戻す
+    async Task<(string Text, double NoSpeech)> ISpanDecoder.DecodeHoleAsync(float[] samples, CancellationToken ct)
+    {
+        _recover!.ChangeLanguage(Decoding.Language);
+        try { return await RecoverAsync(samples, "hole-decode", ct); }
+        finally { _recover.ChangeLanguage("auto"); }
+    }
+
+    private async Task<(string Text, double NoSpeech)> RecoverAsync(float[] samples, string label, CancellationToken ct)
     {
         var sb = new StringBuilder();
         double noSpeech = 0;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await foreach (var seg in _recover!.ProcessAsync(samples, ct)) { sb.Append(seg.Text); noSpeech = Math.Max(noSpeech, seg.NoSpeechProbability); }
-        AppLog.Write($"span-decode ms={sw.ElapsedMilliseconds} sec={samples.Length / (double)Audio.SampleRate:F1}"); // 本文は書かない
+        AppLog.Write($"{label} ms={sw.ElapsedMilliseconds} sec={samples.Length / (double)Audio.SampleRate:F1}"); // 本文は書かない
         return (sb.ToString(), noSpeech);
     }
 

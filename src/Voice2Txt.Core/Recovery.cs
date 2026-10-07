@@ -23,6 +23,12 @@ public interface ISpanDecoder
 
     /// <summary>拾い直しの復号(言語は自動判定・プロンプト無し・前の文脈無し)。文字列と、声が無い見込み(0〜1)。</summary>
     Task<(string Text, double NoSpeech)> DecodeSpanAsync(float[] samples, CancellationToken ct);
+
+    /// <summary>
+    /// 語の穴の拾い直しの復号(日本語に固定・プロンプト無し・前の文脈無し)。日本語の発話の中の穴なので言語を判定しない(判定の符号化の分、約半分の時間で済む)。
+    /// 既定は <see cref="DecodeSpanAsync"/>。
+    /// </summary>
+    Task<(string Text, double NoSpeech)> DecodeHoleAsync(float[] samples, CancellationToken ct) => DecodeSpanAsync(samples, ct);
 }
 
 /// <summary>
@@ -95,6 +101,12 @@ public static class Recovery
     /// <summary>声の区間を分ける無音の長さ(秒)。</summary>
     public const double PauseSeconds = 0.5;
 
+    /// <summary>
+    /// 途中経過で、声の区間(語の穴)が終わったとみなす写しの終わりまでの長さ(秒)。写しは無音を詰めて末尾に <see cref="Audio.SpeechPadSeconds"/> だけ残すので、
+    /// それより短くする(区間の後ろで黙っている間 = 次の文を話し始める前に、先回りの拾い直しを済ませる。<see cref="PauseSeconds"/> では黙っている間は届かない)。
+    /// </summary>
+    public const double EndedSeconds = Audio.SpeechPadSeconds - 0.05;
+
     /// <summary>拾い直す区間の最短の長さ(秒)。咳・息・物音のような短い音は拾い直さない。</summary>
     public const double MinSpanSeconds = 0.5;
 
@@ -111,12 +123,17 @@ public static class Recovery
     public static Action<string>? Diag { get; set; }
 
     /// <summary>
-    /// 語の穴: 隣り合う 2 つの語の時刻の間に、声(<see cref="Audio.VoiceLevel"/> 以上の 30 ms 区間)がこの秒数以上あれば、間の語を飛ばしたとみなす。
+    /// 語の穴: 隣り合う 2 つの語の時刻の間に、はっきりした声(<see cref="HoleRelativeLevel"/>)がこの秒数以上あれば、間の語を飛ばしたとみなす。
     /// 声の区間が無音の間で分かれていない所(読み上げた記号の語「アンダーバー、最終、ドット」を復号が「report.pdf」にまとめた)も拾い直す。
-    /// 普通の発話の語の間は 0.9 秒以下(前の語の読みの長さを含む。ゆっくり読んだ数字で 0.96 秒)、雑音の混じる録音で 1.4 秒未満。
-    /// 雑音の所を拾い直しても、日本語の文字が無い結果(「Two.」)は差し込まない(<see cref="HasJapanese"/>)。
+    /// 普通の発話の語の間は 0.87 秒以下(前の語の読みの長さを含む。ゆっくり読んだ数字「25」の後ろ)、記号の語を飛ばした穴で 1.32 秒。
     /// </summary>
-    public const double HoleSeconds = 1.3;
+    public const double HoleSeconds = 1.1;
+
+    /// <summary>
+    /// 語の穴で数える声の下限の、その録音で最も大きい 30 ms 区間の RMS に対する比(-20 dB)。雑音の混じる録音の、語の間の雑音を声として数えない
+    /// (<see cref="Audio.VoiceLevel"/> だけで数えると雑音の所が 1.38 秒の穴になる)。
+    /// </summary>
+    public const double HoleRelativeLevel = 0.1;
 
     /// <summary>
     /// 確定版を作る: 全体を復号し、復号が途中で返し終えたら最後の区切りの終わりから続きを復号してつなぐ(whisper.cpp が窓を送るのと同じ位置)。
@@ -188,7 +205,7 @@ public static class Recovery
             if (inSpan.Count > 0)
             {
                 // 途中経過: 英字に読めた区間は、確定版(前後に日本語が続く)の復号が飛ばすことがある。終わった区間なら先に拾い直して覚えておく
-                if (prefetch && cache is not null && samples.Length - e >= PauseSeconds * rate && MostlyLatin(inSpan.Select(w => w.Text)))
+                if (prefetch && cache is not null && samples.Length - e >= EndedSeconds * rate && MostlyLatin(inSpan.Select(w => w.Text)))
                 {
                     var c = Cut();
                     if (!cache.TryGet(c, out _)) cache.Add(c, await decoder.DecodeSpanAsync(c, ct));
@@ -215,16 +232,17 @@ public static class Recovery
             inserts.Add((at, got, false));
         }
         int holes = 0;
-        // 語の穴: 声の区間の中で、隣り合う語の時刻の間に声が長く続く所
+        // 語の穴: 声の区間の中で、隣り合う語の時刻の間にはっきりした声が長く続く所
+        double holeLevel = Math.Max(level, Audio.PeakFrameRms(samples) * HoleRelativeLevel);
         for (int i = 1; i < words.Count; i++)
         {
             double a = words[i - 1].At, b = words[i].At;
-            if (VoicedSeconds(samples, level, a, b) < HoleSeconds) continue;
+            if (VoicedSeconds(samples, holeLevel, a, b) < HoleSeconds) continue;
             // 語の無い声の区間が入っていれば、上で区間ごと拾い直した(同じ音を 2 回差し込まない)
             if (wordless.Any(w => w.Start < b * rate && w.End > a * rate)) continue;
             int cs = (int)(a * rate), ce = Math.Min(samples.Length, (int)(b * rate));
             // 途中経過: 後ろの語が写しの終わり近く(まだ話している所)なら待つ。終わった穴は拾い直して覚えておき、確定版が同じ音で切り出せば復号し直さない
-            if (prefetch && samples.Length - ce < PauseSeconds * rate) continue;
+            if (prefetch && samples.Length - ce < EndedSeconds * rate) continue;
             ct.ThrowIfCancellationRequested();
             var c = new float[Math.Max(ce - cs, (int)(Audio.MinDecodeSeconds * rate))];
             Array.Copy(samples, cs, c, 0, ce - cs);
@@ -233,7 +251,7 @@ public static class Recovery
             if (cache is not null && cache.TryGet(c, out res)) hit = true;
             else
             {
-                res = await decoder.DecodeSpanAsync(c, ct);
+                res = await decoder.DecodeHoleAsync(c, ct);
                 cache?.Add(c, res);
             }
             var (got, noSpeech) = res;
@@ -260,7 +278,7 @@ public static class Recovery
         return n * frame / (double)sampleRate;
     }
 
-    /// <summary>ひらがな・カタカナ・漢字を含むか(日本語の発話の穴から拾い直した結果か。雑音を読んだ「Two.」「Ому」は含まない)。</summary>
+    /// <summary>ひらがな・カタカナ・漢字を含むか(日本語の発話の穴から拾い直した結果か。雑音・物音を読んだ「Two.」「Ому」「2」は含まない)。</summary>
     public static bool HasJapanese(string s) =>
         s.Any(c => c is >= '぀' and <= 'ヿ' or >= '一' and <= '鿿' or '々' or >= 'ｦ' and <= 'ﾟ');
 
