@@ -48,7 +48,7 @@ public static class SettingsSchema
             SettingKind.Choice, ModelChoices),
         new("minPressSeconds", "短い押下の取り消し(秒)", "これより短くトークキーを押して離したときは、録音せずに取り消します(押し間違いの対策)。",
             SettingKind.Number, Min: 0.05, Max: 2.0, Step: 0.05, Decimals: 2),
-        new("silenceThreshold", "無音のしきい値", "録音の最も大きい音がこれ未満なら、無音として取り消します。小さい声が取り消されるときは下げます(0.001〜0.1)。",
+        new("silenceThreshold", "無音のしきい値", "録音の最も大きい音がこれ未満で、雑音よりはっきり大きい声も続かなければ、無音として取り消します。小さい声が取り消されるときは下げます(0.001〜0.1)。",
             SettingKind.Number, Min: 0.001, Max: 0.1, Step: 0.001, Decimals: 3),
         new("showInterim", "途中経過を出す", "押している間、それまでの音声の暫定の文字起こしをオーバーレイにだけ出します(操作中のアプリには書き込みません)。",
             SettingKind.Toggle),

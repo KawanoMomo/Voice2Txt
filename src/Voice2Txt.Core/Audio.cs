@@ -94,13 +94,13 @@ public static class Audio
     /// 復号に渡す前に無音区間を詰める。声の区間(30 ms 区間の RMS が <see cref="VoiceLevel"/> 以上)から
     /// <see cref="SpeechPadSeconds"/> 以内のサンプルだけを残す(先頭・末尾の無音は余白まで削り、発話の間の長い無音は余白 2 つ分に縮める)。
     /// 無音が長いほど Whisper は音声に無い文(「ご視聴ありがとうございました」等)を作るので、長さによらず復号に無音を長く渡さない。
-    /// 声が無ければ(最も大きい区間が <paramref name="threshold"/> 未満なら)元のまま返す(無音の取り消しは呼び出し側が先に判定する)。
+    /// 声が無ければ(<see cref="HasVoice"/> が偽なら)元のまま返す(無音の取り消しは呼び出し側が先に判定する)。
     /// </summary>
     public static float[] TrimSilence(float[] samples, double threshold, double padSeconds = SpeechPadSeconds, int sampleRate = SampleRate)
     {
         int frame = Math.Max(1, sampleRate * 30 / 1000);
         int pad = (int)(sampleRate * padSeconds);
-        if (PeakFrameRms(samples, sampleRate) < threshold) return samples;
+        if (!HasVoice(samples, threshold, sampleRate)) return samples;
         double voice = VoiceLevel(samples, threshold, sampleRate);
         var keep = new bool[samples.Length];
         bool any = false;
@@ -147,6 +147,38 @@ public static class Audio
         rms.Sort();
         double noise = rms[rms.Count / 10];
         return Math.Min(threshold, Math.Max(peak * VoiceRelativeLevel, noise * VoiceOverNoise));
+    }
+
+    /// <summary>小さい声とみなす最小の大きさの、無音のしきい値に対する比(しきい値 0.01 なら 0.002、約 -54 dBFS)。</summary>
+    public const double QuietVoiceFloorRatio = 0.2;
+
+    /// <summary>小さい声とみなす下限の、その録音の雑音(静かな方から 5% の 30 ms 区間の RMS)に対する倍率。</summary>
+    public const double QuietVoiceOverNoise = 4;
+
+    /// <summary>小さい声とみなすのに要る、声の区間(30 ms)の合計の長さ(秒)。打鍵の音・机に触れた音のような短い音は声にしない。</summary>
+    public const double QuietVoiceMinSeconds = 0.15;
+
+    /// <summary>
+    /// 録音に声があるか(無ければ発話は取り消し(無音)になり、途中経過も作らない)。最も大きい 30 ms 区間の RMS が
+    /// <paramref name="threshold"/> 以上なら声がある。下回っても、小さい声・感度の低いマイクの声は取り消さない: その録音の雑音の
+    /// <see cref="QuietVoiceOverNoise"/> 倍以上で、かつ <paramref name="threshold"/> の <see cref="QuietVoiceFloorRatio"/> 倍以上の区間が
+    /// 合わせて <see cref="QuietVoiceMinSeconds"/> 秒以上あれば声とみなす(ずっと同じ大きさで続く雑音・短い物音は声にしない)。
+    /// </summary>
+    public static bool HasVoice(float[] samples, double threshold, int sampleRate = SampleRate)
+    {
+        int frame = Math.Max(1, sampleRate * 30 / 1000);
+        var rms = new List<double>(samples.Length / frame + 1);
+        for (int i = 0; i < samples.Length; i += frame)
+            rms.Add(Rms(samples.AsSpan(i, Math.Min(samples.Length, i + frame) - i)));
+        if (rms.Count == 0) return false;
+        double peak = rms.Max();
+        if (peak >= threshold) return true;
+        double floor = threshold * QuietVoiceFloorRatio;
+        if (peak < floor) return false;
+        var sorted = rms.Order().ToList();
+        double level = Math.Max(floor, sorted[sorted.Count / 20] * QuietVoiceOverNoise);
+        int need = (int)Math.Ceiling(QuietVoiceMinSeconds * sampleRate / frame);
+        return rms.Count(r => r >= level) >= need;
     }
 
     /// <summary>30 ms 区間ごとの RMS の最大値。無音判定に使う。</summary>

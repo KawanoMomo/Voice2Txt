@@ -1,5 +1,6 @@
 # CHANGELOG
 
+- BLK-human-20261007-2229-1: 無音のしきい値を下回る小さい声(感度の低いマイク)でも、マイクの雑音よりはっきり大きい声が続けば取り消し(無音)にせず確定版を届ける。途中経過が出る前に離しても同じ(途中経過も小さい声で出る)。発話ごとのログに録音の大きさ `peakRms` を書く
 - BLK-human-20261007-2050-3: タグ `v*` の push で GitHub Actions が `Voice2Txt-{版}-setup.exe`(Inno Setup、自分だけに入れる)と `Voice2Txt-{版}-portable.zip` を作り Release に付ける(中身は自作コードと MIT の依存だけ。NVIDIA の DLL とモデルは入れず、入っていれば止める)。手元でも `packaging\build.ps1 -Version 1.0` で同じものを作れる
 - BLK-human-20261007-2120-1: 製品名が `Voice2Txt` になる(名前空間・プロジェクト・フォルダ・exe `Voice2Txt.exe`・設定等の置き場 `%APPDATA%\Voice2Txt` / `%LOCALAPPDATA%\Voice2Txt`・Run の値名・mutex・文書)。通常起動の最初に旧名の置き場の中身を移し、旧名の自動起動を外す(ログ `legacy-migrated`)。旧名の版が動いている間は起動しない
 - BLK-human-20261007-2050-2: ビルド成果物・配布物に NVIDIA の CUDA 実行時ライブラリ(cudart / cuBLAS)が入らない。初回起動時に NVIDIA の公式 redist から取得し SHA-256 を照合して `%LOCALAPPDATA%\Voice2Txt\runtime\` に置いて CUDA で動く(取得中は「モデル準備中(CUDA の準備中 …)」、取得できなければ「CUDA 無し(CPU)」。設定 `fetchCudaRuntime` で止められ、`--prepare-cuda` で先に取得できる)

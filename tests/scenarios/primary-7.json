@@ -2,7 +2,7 @@
   "name": "primary-7",
   "persona": "primary",
   "step": 7,
-  "description": "窓の判定: 話している間に同じ窓の別の入力欄へフォーカスを移す。同じ窓なので退避にならず貼られる(判定はウィンドウ単位)",
+  "description": "届いた文字列が音声と一致し、脱落が無い。窓の判定: 話している間に同じ窓の別の入力欄へフォーカスを移す。同じ窓なので退避にならず貼られる(判定はウィンドウ単位)。続けて短い発話(1〜2 秒)を、途中経過がオーバーレイに出る前に離す: 無音のしきい値を下回る小さい声(雑音の乗ったマイク)2 本と普通の声 1 本。どれも取り消し(無音)にならず確定版が届く",
   "timeoutMs": 600000,
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
@@ -13,16 +13,37 @@
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 150 },
     { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "test-results/fixtures/utt-19.wav" },
+    { "do": "wait", "ms": 950 },
+    { "do": "shot", "name": "小さい声を離す直前" },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "test-results/fixtures/utt-20.wav" },
+    { "do": "wait", "ms": 950 },
+    { "do": "shot", "name": "小さい声を離す直前 2" },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "test-results/fixtures/utt-14.wav" },
+    { "do": "wait", "ms": 1000 },
+    { "do": "release" },
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
     "deliveries": [
-      { "to": "textbox", "text": "同じ窓の別の入力欄に貼られることを確認します。", "minSimilarity": 0.8 }
+      { "to": "textbox", "text": "同じ窓の別の入力欄に貼られることを確認します。", "minSimilarity": 0.8 },
+      { "to": "textbox", "text": "了解です。", "minSimilarity": 0.7 },
+      { "to": "textbox", "text": "送ります。", "minSimilarity": 0.7 },
+      { "to": "textbox", "text": "お願いします。", "minSimilarity": 0.7 }
     ],
-    "textbox": { "text": "同じ窓の別の入力欄に貼られることを確認します。", "minSimilarity": 0.8 },
-    "states": ["録音中", "処理中", "貼り付け完了"],
+    "textbox": { "text": "同じ窓の別の入力欄に貼られることを確認します。了解です。送ります。お願いします。", "minSimilarity": 0.8 },
+    "states": ["録音中", "処理中", "貼り付け完了", "録音中", "処理中", "貼り付け完了", "録音中", "処理中", "貼り付け完了", "録音中", "処理中", "貼り付け完了"],
     "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
     "cancellations": [],
-    "maxReleaseToDeliverMs": 1000
+    "maxReleaseToDeliverMs": 1000,
+    "shots": [
+      { "name": "小さい声を離す直前", "state": "録音中", "maxInterimChars": 0 },
+      { "name": "小さい声を離す直前 2", "state": "録音中", "maxInterimChars": 0 }
+    ]
   }
 }

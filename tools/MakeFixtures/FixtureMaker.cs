@@ -37,6 +37,8 @@ public static class FixtureMaker
         ["utt-16"] = "新しい資料は、共有フォルダに保存してあります。",
         ["utt-17"] = "ええ、あの、来週の打ち合わせは、えっと、会議室でやります。",
         ["utt-18"] = "設計書の第三章に、認証まわりのモジュールを分割する案と、ログの出力形式を統一する案を追記しましたので、確認をお願いします。",
+        ["utt-19"] = "了解です。",
+        ["utt-20"] = "送ります。",
     };
 
     /// <summary>無音だけの素材(秒)。無音で押して離したら取り消し、を確かめる。</summary>
@@ -56,6 +58,18 @@ public static class FixtureMaker
     public static readonly IReadOnlyDictionary<string, (double Level, double Tail)> Levels = new Dictionary<string, (double, double)>
     {
         ["utt-16"] = (0.015, 0.006),
+        ["utt-19"] = (0.005, 0),
+        ["utt-20"] = (0.004, 0),
+    };
+
+    /// <summary>
+    /// 録音機器の雑音(RMS)を重ねる。実際のマイクは黙っていても 0 にならない。小さい声(<see cref="Levels"/>)と組み合わせ、
+    /// 無音のしきい値を下回る声でも、雑音よりはっきり大きければ取り消されないかを確かめる。乱数の種は固定(毎回同じバイト列)。
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, double> Noises = new Dictionary<string, double>
+    {
+        ["utt-19"] = 0.0003,
+        ["utt-20"] = 0.0003,
     };
 
     public static IEnumerable<string> Names => Items.Keys.Concat(Silences.Keys);
@@ -81,6 +95,7 @@ public static class FixtureMaker
                 var pad = Pads.TryGetValue(name, out var p) ? p : (0, 0);
                 said = Speak(Items[name], tmp, pad.Item1, pad.Item2);
                 if (Levels.TryGetValue(name, out var lv)) said += $" ({Quiet(tmp, lv.Level, lv.Tail)})";
+                if (Noises.TryGetValue(name, out var nz)) { AddNoise(tmp, nz); said += string.Format(CultureInfo.InvariantCulture, " (雑音 RMS {0})", nz); }
             }
             File.Move(tmp, wav, overwrite: true); // 並行して走る別の実行が書きかけを読まないよう、書き終えてから置く
             made++;
@@ -114,6 +129,24 @@ public static class FixtureMaker
         s.Speak(p);
         s.SetOutputToNull();
         return sb.ToString();
+    }
+
+    /// <summary>RMS が <paramref name="rms"/> の雑音(正規分布、種 1)を全体に重ねる。</summary>
+    private static void AddNoise(string wav, double rms)
+    {
+        var b = File.ReadAllBytes(wav);
+        int o = 12;
+        while (Encoding.ASCII.GetString(b, o, 4) != "data") o += 8 + BitConverter.ToInt32(b, o + 4);
+        int d = o + 8, n = BitConverter.ToInt32(b, o + 4) / 2;
+        var rnd = new Random(1);
+        for (int j = 0; j < n; j++)
+        {
+            double g = Math.Sqrt(-2 * Math.Log(1 - rnd.NextDouble())) * Math.Cos(2 * Math.PI * rnd.NextDouble());
+            double x = BitConverter.ToInt16(b, d + j * 2) / 32768.0 + g * rms;
+            short v = (short)Math.Clamp(Math.Round(x * 32768.0), short.MinValue, short.MaxValue);
+            b[d + j * 2] = (byte)(v & 0xFF); b[d + 1 + j * 2] = (byte)((v >> 8) & 0xFF);
+        }
+        File.WriteAllBytes(wav, b);
     }
 
     /// <summary>16 kHz モノラル 16 bit の無音(標準の 44 バイトのヘッダ)。</summary>
