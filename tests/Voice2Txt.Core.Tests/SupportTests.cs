@@ -141,6 +141,51 @@ public class ModelProvisionerTests
         Assert.StartsWith("https://huggingface.co/ggerganov/whisper.cpp/", e.Url);
         Assert.Equal(64, e.Sha256.Length);
     }
+
+    [Fact]
+    public void カタログの全モデルは公式の取得元とハッシュとサイズを持つ()
+    {
+        Assert.Equal(ModelCatalog.Entries.Count, ModelCatalog.All.Count); // 名前の重複なし
+        foreach (var e in ModelCatalog.Entries)
+        {
+            Assert.Matches("^[a-z0-9.-]+$", e.Name);
+            Assert.Equal($"ggml-{e.Name}.bin", e.FileName);
+            Assert.Equal($"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{e.FileName}", e.Url);
+            Assert.Matches("^[0-9a-f]{64}$", e.Sha256);
+            Assert.True(e.Size > 10_000_000, e.Name);
+        }
+        Assert.Equal(ModelCatalog.Entries.Count, ModelCatalog.Entries.Select(e => e.Sha256).Distinct().Count());
+    }
+
+    [Fact]
+    public void 小さい側と大きい側を選べて既定はlarge_v3_turbo()
+    {
+        Assert.Equal("large-v3-turbo", new AppSettings().Model);
+        Assert.Contains(ModelCatalog.Entries, e => e.Name is "base" or "small");
+        Assert.Contains(ModelCatalog.Entries, e => e.Name == "large-v3");
+        var sizes = ModelCatalog.Entries.Select(e => e.Size).ToList();
+        Assert.Equal(sizes.Order(), sizes); // 小さい順に並ぶ
+    }
+
+    [Theory]
+    [InlineData("small", "small")]
+    [InlineData("Small", "small")]
+    [InlineData(" base ", "base")]
+    [InlineData("ggml-large-v3.bin", "large-v3")]
+    [InlineData("large-v3-turbo", "large-v3-turbo")]
+    public void モデルは名前かファイル名で引ける(string input, string expected) =>
+        Assert.Equal(expected, ModelCatalog.Get(input).Name);
+
+    [Theory]
+    [InlineData("whisper-small")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void 未知のモデルのエラー文に選べる名前の一覧が入る(string? input)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => ModelCatalog.Get(input));
+        Assert.StartsWith($"未知のモデル: {input}", ex.Message);
+        foreach (var e in ModelCatalog.Entries) Assert.Contains(e.Name, ex.Message);
+    }
 }
 
 public class VerificationTests
@@ -197,6 +242,18 @@ public class VerificationTests
         r.Runtime = "Cpu";
         Assert.Contains(Evaluator.Check(e, r), f => f.Contains("バックエンド Cpu"));
         r.Runtime = "Cuda";
+        Assert.Empty(Evaluator.Check(e, r));
+    }
+
+    [Fact]
+    public void 期待したモデルで動いていなければ失敗にする()
+    {
+        var e = Exp();
+        e.Model = "base";
+        var r = Ok();
+        r.Model = "large-v3-turbo";
+        Assert.Contains(Evaluator.Check(e, r), f => f.Contains("モデル large-v3-turbo"));
+        r.Model = "base";
         Assert.Empty(Evaluator.Check(e, r));
     }
 

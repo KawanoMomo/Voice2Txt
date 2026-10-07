@@ -2,28 +2,32 @@
   "name": "primary-3",
   "persona": "primary",
   "step": 3,
-  "description": "退避: 離した直後に前面ウィンドウを別の窓に切り替える。貼られずクリップボードに残り「Ctrl+V で貼れます」が出る",
-  "timeoutMs": 600000,
+  "description": "モデルを変える: 設定の model を小さい側の base にする。取得元から用意(取得・ハッシュ検証)して読み込み、そのモデルで 2 本が話した順に貼られる",
+  "timeoutMs": 900000,
+  "settings": { "model": "base" },
   "actions": [
-    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "waitModel", "timeoutMs": 840000 },
     { "do": "focus", "window": "textbox" },
-    { "do": "press", "audio": "tests/fixtures/audio/utt-06.wav" },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-01.wav" },
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 150 },
     { "do": "release" },
-    { "do": "focus", "window": "other" },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-04.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
+    "model": "base",
     "deliveries": [
-      { "to": "clipboard", "text": "この資料は後でチャットに貼り付けておきます。", "minSimilarity": 0.8 }
+      { "to": "textbox", "text": "今日の設計レビューを始めます。", "minSimilarity": 0.8 },
+      { "to": "textbox", "text": "来週のリリースに向けて、残りの課題を洗い出しましょう。", "minSimilarity": 0.8 }
     ],
-    "textbox": { "text": "" },
-    "states": ["録音中", "処理中", "退避"],
-    "stateTexts": ["Ctrl+V で貼れます"],
-    "forbiddenStates": ["貼り付け完了"],
+    "warnings": [],
+    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
     "cancellations": [],
     "maxReleaseToDeliverMs": 1000,
-    "screenshots": ["退避"]
+    "screenshots": ["貼り付け完了"]
   }
 }

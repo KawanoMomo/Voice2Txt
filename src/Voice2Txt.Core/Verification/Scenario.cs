@@ -85,6 +85,9 @@ public sealed class Expectation
     /// <summary>読めていなければならない文字起こしのバックエンド(Cuda / Cpu)。</summary>
     public string? Runtime { get; set; }
 
+    /// <summary>読み込めていなければならないモデルの名前(ModelCatalog の名前)。</summary>
+    public string? Model { get; set; }
+
     /// <summary>操作中のアプリへ素通ししたキーの列("RControlKey down" の形。順序どおり。空配列なら素通し無し)。</summary>
     public List<string>? PassedKeys { get; set; }
 
