@@ -174,6 +174,8 @@ public sealed class PushToTalkController : IAsyncDisposable
                     Finish(ctx, Outcome.Cancelled, CancelReason.Silence, null, null, new(OverlayState.CancelledSilence));
                     continue;
                 }
+                // 前後と発話の間の長い無音を詰めてから復号に渡す(無音が長いと音声に無い文が足される)
+                samples = Audio.TrimSilence(samples, _o.SilenceThreshold);
                 long t0 = _d.Clock.NowMs;
                 string text;
                 try { text = (await _d.Transcriber.TranscribeAsync(samples, null, _cts.Token)).Trim(); }
