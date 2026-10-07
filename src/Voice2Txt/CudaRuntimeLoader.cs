@@ -50,7 +50,7 @@ internal static class CudaRuntimeLoader
             {
                 var last = "";
                 AppLog.Write($"cuda-runtime fetch dir={prov.RuntimeDir}");
-                await prov.EnsureAsync(new Progress<(string Phase, double Ratio)>(p =>
+                await prov.EnsureAsync(new InlineProgress<(string Phase, double Ratio)>(p =>
                 {
                     var s = $"CUDA の準備中 {p.Phase} {(int)(p.Ratio * 100)}%";
                     if (s != last) { last = s; onProgress(s); }

@@ -36,6 +36,10 @@ internal sealed class VerifyHost : ApplicationContext
     private SettingsForm? _settingsForm;
     private int _shotNo;
     private readonly System.Windows.Forms.Timer _fgProbe = new() { Interval = 25 };
+    private readonly ModelPrepTracker _prepTrack = new();
+    private OverlayState _lastRecorded = OverlayState.Hidden;
+    private string? _lastPrepMilestone;
+    private string? _fetchDir; // modelPrep = download で取得したモデルを置くフォルダ(終わったら消す)
 
     public VerifyHost(string scenarioPath, string outDir)
     {
@@ -121,6 +125,14 @@ internal sealed class VerifyHost : ApplicationContext
     private void OnOverlay(OverlayView v)
     {
         _overlay.Apply(v);
+        // モデル準備中は進み具合が 1% ごとに変わる: 記録とスクショは段階が変わるか 10% の刻みを跨いだときだけ
+        if (v.State == OverlayState.ModelPreparing)
+        {
+            var k = ModelPrepProgress.Milestone(v.Detail);
+            if (_lastRecorded == OverlayState.ModelPreparing && k == _lastPrepMilestone) return;
+            _lastPrepMilestone = k;
+        }
+        _lastRecorded = v.State;
         var rec = new StateRecord
         {
             AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(TalkKeys.DisplayName(_talkKey)),
@@ -233,6 +245,9 @@ internal sealed class VerifyHost : ApplicationContext
         });
         AppLog.Write($"done completed={_result.Completed} error={_result.Error}");
         await _ptt.DisposeAsync();
+        if (_fetchDir is not null)
+            try { Directory.Delete(_fetchDir, true); }
+            catch (Exception ex) { AppLog.Write("model-prep cleanup-error " + ex.Message); }
         _overlay.BeginInvoke(ExitThread);
     }
 
@@ -240,13 +255,29 @@ internal sealed class VerifyHost : ApplicationContext
     {
         try
         {
+            _prepTrack.Reset();
             _ptt.SetModelStatus(false, null);
             var dir = _sc.ModelsDir is null ? ModelCatalog.DefaultModelsDirectory : Scenario.ResolvePath(_scenarioPath, _sc.ModelsDir);
             // 検証モードは CUDA の実行時ライブラリを取得しない(取得済みの runtime フォルダがあればそれを読み、無ければ CPU)
             var cudaNote = await CudaRuntimeLoader.PrepareAsync(
-                new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), fetch: false, p => _ptt.SetModelStatus(false, p), CancellationToken.None);
+                new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), fetch: false, ModelProgress, CancellationToken.None);
             lock (_result) _result.CudaRuntime = cudaNote ?? "ready";
-            var t = await EngineLoader.LoadAsync(_settings, dir, p => _ptt.SetModelStatus(false, p), CancellationToken.None);
+            ModelProvisioner? prov = null;
+            switch (_sc.ModelPrep)
+            {
+                case null: break;
+                case "download":
+                    // 手元のモデルを取得元にして、空のフォルダへ取得から始める(手元にも無ければ先に本物の取得元から手元へ)
+                    await new ModelProvisioner(dir).EnsureAsync(ModelCatalog.Get(_settings.Model), null, CancellationToken.None);
+                    var src = dir;
+                    dir = _fetchDir = Path.Combine(_out, "models");
+                    if (Directory.Exists(dir)) Directory.Delete(dir, true);
+                    prov = new ModelProvisioner(dir, new HttpClient(new LocalModelSourceHandler(src, _sc.ModelFetchMs)) { Timeout = Timeout.InfiniteTimeSpan });
+                    AppLog.Write($"model-prep source={src} fetchMs={_sc.ModelFetchMs}");
+                    break;
+                default: throw new InvalidDataException($"modelPrep を読めない: {_sc.ModelPrep}(download のみ)");
+            }
+            var t = await EngineLoader.LoadAsync(_settings, dir, ModelProgress, CancellationToken.None, prov);
             _engine.Set(t);
             _result.ModelReadyMs = _sw.ElapsedMilliseconds;
             _result.Runtime = t.Runtime;
@@ -261,6 +292,25 @@ internal sealed class VerifyHost : ApplicationContext
             AppLog.Write("engine-error " + ex.Message);
             _modelReady.TrySetException(ex);
         }
+    }
+
+    /// <summary>
+    /// モデルの準備の進み具合(常駐時の TrayApp の Progress と同じ文)。オーバーレイへ渡し、段階が変わるか 10% の刻みを跨いだら
+    /// そのときのトレイのツールチップと一緒に result.json の modelPrep と verify.log に残す。
+    /// </summary>
+    private void ModelProgress(string p)
+    {
+        _ptt.SetModelStatus(false, p);
+        if (!_prepTrack.Accept(p)) return;
+        var (stage, pct) = ModelPrepProgress.Parse(p);
+        var tip = AppVersion.TrayText(ModelPrepProgress.TrayStatus(p));
+        long at = _sw.ElapsedMilliseconds;
+        lock (_result)
+        {
+            _result.ModelPrep.Add(new ModelPrepRecord { AtMs = at, Stage = stage, Percent = pct, Tooltip = tip });
+            _result.TrayTooltip = tip;
+        }
+        AppLog.Write($"model-prep stage={stage}{(pct is { } x ? $" pct={x}" : "")} atMs={at}");
     }
 
     private async Task ExecuteActionsAsync()

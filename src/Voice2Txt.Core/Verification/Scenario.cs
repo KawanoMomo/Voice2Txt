@@ -20,6 +20,16 @@ public sealed class Scenario
     /// <summary>モデルのフォルダ。省略時は %APPDATA%\Voice2Txt\models(全体で共用)。</summary>
     public string? ModelsDir { get; set; }
 
+    /// <summary>
+    /// モデルの準備をどこから始めるか。省略時はモデルのフォルダにあるものを使う。
+    /// "download": モデルのフォルダを &lt;out&gt;/models(空)にし、取得から始める。取得元は手元のモデルのフォルダ(modelsDir か既定)の同じファイルで、
+    /// ネットに出ずに <see cref="ModelFetchMs"/> かけて少しずつ返す(取得・ハッシュ検証・進み具合の経路は本物と同じ)。手元にも無ければ先に本物の取得元から手元へ取る。
+    /// </summary>
+    public string? ModelPrep { get; set; }
+
+    /// <summary>modelPrep = download の取得にかける時間(ms)。</summary>
+    public int ModelFetchMs { get; set; } = 5000;
+
     public List<ScenarioAction> Actions { get; set; } = [];
     public Expectation Expect { get; set; } = new();
 
@@ -43,7 +53,7 @@ public sealed class Scenario
 }
 
 /// <summary>
-/// 台本の 1 手。do は次のどれか:
+/// 台本の 1 手(モデルの準備と並行して上から実行する。準備中に press すれば「モデル準備中(…)」が撮れる)。do は次のどれか:
 /// waitModel(モデルの用意を待つ)/ press(キー key を押す。省略時は設定のトークキー。audio に音声ファイル)/ holdUntilAudioEnd(流し終わるまで押し続ける)/
 /// release(キー key を離す。省略時はトークキー)/ key(キー key を押して離す。省略時 C)/ focus(前面を window = "textbox" か "other" に切り替える)/
 /// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)/
@@ -119,6 +129,9 @@ public sealed class Expectation
 
     /// <summary>スクリーンショットが撮れていなければならない状態。</summary>
     public List<string>? Screenshots { get; set; }
+
+    /// <summary>モデルの準備の段階の列(この順に記録されていること。間に他の段階があってもよい。例 ダウンロード, 読み込み, 暖機)。</summary>
+    public List<string>? ModelPrep { get; set; }
 
     /// <summary>台本の shot で撮ったもの(名前で引く。状態と音量バーの値の範囲)。</summary>
     public List<ShotExpectation>? Shots { get; set; }

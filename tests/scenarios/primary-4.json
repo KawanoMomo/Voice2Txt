@@ -2,11 +2,19 @@
   "name": "primary-4",
   "persona": "primary",
   "step": 4,
-  "description": "ショートカット単体: 右 Ctrl を押したまま C を押して離す。録音されず取り消し、右 Ctrl+C が合成して送られ(コピーが効く)、何も貼られない",
+  "description": "モデルの取得中に押すと「モデル準備中(ダウンロード n%)」が出て録音せず取り消し、取得・読み込み・暖機の段階がトレイの文言付きで記録される。その後ショートカット単体: 右 Ctrl を押したまま C を押して離す。録音されず取り消し、右 Ctrl+C が合成して送られ(コピーが効く)、何も貼られない",
   "timeoutMs": 600000,
+  "settings": { "model": "base" },
+  "modelPrep": "download",
+  "modelFetchMs": 6000,
   "actions": [
-    { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "focus", "window": "textbox" },
+    { "do": "wait", "ms": 2000 },
+    { "do": "press" },
+    { "do": "wait", "ms": 600 },
+    { "do": "shot", "name": "取得中" },
+    { "do": "release" },
+    { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "press", "audio": "test-results/fixtures/ja-one-sentence.wav" },
     { "do": "wait", "ms": 600 },
     { "do": "key", "key": "C" },
@@ -18,9 +26,14 @@
     "deliveries": [],
     "textbox": { "text": "" },
     "forbiddenStates": ["処理中", "貼り付け完了", "退避"],
-    "cancellations": ["OtherKey"],
+    "cancellations": ["ModelNotReady", "OtherKey"],
     "sentKeys": ["RControlKey down", "C down"],
     "passedKeys": ["C up", "RControlKey up"],
-    "warnings": []
+    "warnings": [],
+    "model": "base",
+    "modelPrep": ["ダウンロード", "読み込み", "暖機"],
+    "stateTexts": ["モデル準備中(ダウンロード"],
+    "screenshots": ["モデル準備中"],
+    "shots": [{ "name": "取得中", "state": "モデル準備中" }]
   }
 }

@@ -68,6 +68,9 @@ foreach (var file in files)
         }
         else
         {
+            // modelPrep = download で取得したモデルの複製は残さない(検証モードが消せなかった分)
+            var fetched = Path.Combine(dir, "models");
+            if (Directory.Exists(fetched)) try { Directory.Delete(fetched, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             var resultPath = Path.Combine(dir, "result.json");
             fails = File.Exists(resultPath)
                 ? Evaluator.Check(sc.Expect, VerifyResult.Load(resultPath), s => File.Exists(Path.Combine(dir, s)))
