@@ -1,0 +1,24 @@
+{
+  "name": "transcriber-3",
+  "persona": "transcriber",
+  "step": 3,
+  "description": "文字起こし: 言い淀み(「ええと」を 2 回)を含む短い発話を押して流し、確定版が正解文と一致する(言い淀みが英字の「A」や別の語に化けない。「えーと」の表記の揺れは可)",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-12.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 }
+  ],
+  "expect": {
+    "deliveries": [
+      { "to": "textbox", "text": "申請書は、ええと、ええと、総務に出してください。", "minSimilarity": 0.85 }
+    ],
+    "textbox": { "text": "申請書は、ええと、ええと、総務に出してください。", "minSimilarity": 0.85 },
+    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
+    "cancellations": [],
+    "maxReleaseToDeliverMs": 1000
+  }
+}

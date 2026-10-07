@@ -20,7 +20,7 @@ internal sealed class WhisperTranscriber : ITranscriber, IDisposable
     {
         RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Cuda, RuntimeLibrary.Cpu];
         var f = WhisperFactory.FromPath(modelPath);
-        var p = f.CreateBuilder().WithLanguage("ja").Build();
+        var p = f.CreateBuilder().WithLanguage(Decoding.Language).WithPrompt(Decoding.InitialPrompt).Build();
         var rt = RuntimeOptions.LoadedLibrary?.ToString() ?? "unknown";
         return new WhisperTranscriber(f, p, rt);
     }
