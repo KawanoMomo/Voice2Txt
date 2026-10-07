@@ -2,7 +2,7 @@
   "name": "junior-3",
   "persona": "junior",
   "step": 3,
-  "description": "1 文をトークキーを押している間に流し、離す。オーバーレイが 準備中 → 録音中 → 処理中 → 貼り付け完了 と変わり、話している間は録音中の音量バーが高く振れ、検証用のテキスト欄に確定版だけが届く",
+  "description": "1 文をトークキーを押している間に流し、離す。オーバーレイが 準備中 → 録音中 → 処理中 → 貼り付け完了 と変わり、話している間は録音中の音量バーが高く振れ、検証用のテキスト欄に確定版だけが届く。続けて約 11 秒の長い発話を流すと、押している間はオーバーレイにそれまでの音声の途中経過が出て(届かない)、離した後に届くのは確定版だけ",
   "timeoutMs": 600000,
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
@@ -13,19 +13,32 @@
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 200 },
     { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-18.wav" },
+    { "do": "wait", "ms": 6000 },
+    { "do": "shot", "name": "長い発話の途中経過" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 200 },
+    { "do": "shot", "name": "離す直前の途中経過" },
+    { "do": "release" },
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
     "deliveries": [
-      { "to": "textbox", "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 }
+      { "to": "textbox", "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 },
+      { "to": "textbox", "text": "設計書の第三章に、認証まわりのモジュールを分割する案と、ログの出力形式を統一する案を追記しましたので、確認をお願いします。", "minSimilarity": 0.8 }
     ],
-    "textbox": { "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 },
-    "states": ["準備中", "録音中", "処理中", "貼り付け完了"],
+    "textbox": { "text": "今日の会議の資料をチャットで送ります。設計書の第三章に、認証まわりのモジュールを分割する案と、ログの出力形式を統一する案を追記しましたので、確認をお願いします。", "minSimilarity": 0.85 },
+    "states": ["準備中", "録音中", "処理中", "貼り付け完了", "録音中", "処理中", "貼り付け完了"],
     "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
     "cancellations": [],
     "runtime": "Cuda",
     "maxReleaseToDeliverMs": 3000,
     "screenshots": ["準備中", "録音中", "処理中", "貼り付け完了"],
-    "shots": [{ "name": "発話中", "state": "録音中", "minMeter": 0.5 }]
+    "shots": [
+      { "name": "発話中", "state": "録音中", "minMeter": 0.5 },
+      { "name": "長い発話の途中経過", "state": "録音中", "minInterimChars": 8 },
+      { "name": "離す直前の途中経過", "state": "録音中", "minInterimChars": 30 }
+    ]
   }
 }

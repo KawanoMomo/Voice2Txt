@@ -73,7 +73,11 @@ internal sealed class VerifyHost : ApplicationContext
     private void OnOverlay(OverlayView v)
     {
         _overlay.Apply(v);
-        var rec = new StateRecord { AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(TalkKeys.DisplayName(_talkKey)) };
+        var rec = new StateRecord
+        {
+            AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(TalkKeys.DisplayName(_talkKey)),
+            InterimChars = v.Interim?.Length ?? 0,
+        };
         if (v.State != OverlayState.Hidden)
         {
             _overlay.Refresh();
@@ -84,7 +88,7 @@ internal sealed class VerifyHost : ApplicationContext
         }
         rec.Foreground = ProbeForeground();
         lock (_result) _result.States.Add(rec);
-        AppLog.Write($"state {v.Label} capture={rec.Capture}");
+        AppLog.Write($"state {v.Label} interim={rec.InterimChars} capture={rec.Capture}");
     }
 
     /// <summary>台本の shot: 今のオーバーレイを撮り、そのとき描いた音量バーの値と一緒に結果に残す(UI スレッド)。</summary>
@@ -96,10 +100,14 @@ internal sealed class VerifyHost : ApplicationContext
         _overlay.Refresh();
         Thread.Sleep(40);
         var file = $"{++_shotNo:00}-{Safe(v.Label)}-{Safe(name)}.png";
-        var rec = new ShotRecord { Name = name, AtMs = _sw.ElapsedMilliseconds, State = v.Label, Meter = Math.Round(meter, 3), Screenshot = "shots/" + file };
+        var rec = new ShotRecord
+        {
+            Name = name, AtMs = _sw.ElapsedMilliseconds, State = v.Label, Meter = Math.Round(meter, 3),
+            InterimChars = _overlay.InterimShown?.Length ?? 0, Screenshot = "shots/" + file,
+        };
         rec.Capture = _overlay.SaveScreenshot(Path.Combine(_shots, file));
         lock (_result) _result.Shots.Add(rec);
-        AppLog.Write($"shot {name} state={v.Label} meter={rec.Meter} capture={rec.Capture}");
+        AppLog.Write($"shot {name} state={v.Label} meter={rec.Meter} interim={rec.InterimChars} capture={rec.Capture}");
     }
 
     /// <summary>台本のキー 1 つをトークキーの判定に通す(キーボードフックと同じ)。名前の省略はトークキー。</summary>
@@ -313,12 +321,15 @@ internal sealed class VerifyRecorder : IRecorder
             }
         }
 
-        public Task<float[]> StopAsync()
+        /// <summary>今の位置までに流した音声(押下中の途中経過に使う)。</summary>
+        public float[] Snapshot()
         {
-            if (_since is null) return Task.FromResult(Array.Empty<float>());
+            if (_since is null) return [];
             long n = Math.Min(audio.Length, _since.ElapsedMilliseconds * Audio.SampleRate / 1000);
-            return Task.FromResult(audio[..(int)n]);
+            return audio[..(int)n];
         }
+
+        public Task<float[]> StopAsync() => Task.FromResult(Snapshot());
 
         public void Abort() { }
     }

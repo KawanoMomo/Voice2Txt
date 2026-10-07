@@ -18,11 +18,17 @@ public sealed record UtteranceReport(
 /// <param name="PasteSettleMs">Ctrl+V を送ってから次の確定版でクリップボードを上書きするまで空ける最短の時間(貼り付け先がクリップボードを読むのは
 /// 自分の入力を処理した時で、Ctrl+V を送った時ではない)。前の Ctrl+V の後に押した発話は押下だけでこれ以上経つのがふつうで、待つのは処理待ちの発話。</param>
 /// <param name="Fillers">確定版から取り除く言い淀みの語(<see cref="Core.Fillers"/>)。null か空なら取り除かない。</param>
+/// <param name="InterimIntervalMs">押下中に途中経過を作り直す間隔(前の作り直しが終わってから次までの ms)。0 なら途中経過を出さない。</param>
 public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01,
-    int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500, IReadOnlyList<string>? Fillers = null)
+    int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500, IReadOnlyList<string>? Fillers = null,
+    int InterimIntervalMs = 0)
 {
+    /// <summary>途中経過を作り直す間隔の既定(MOC の「約 0.7 秒ごと」)。</summary>
+    public const int DefaultInterimIntervalMs = 700;
+
     public static PttOptions From(AppSettings s) => new(s.MinPressSeconds, s.SilenceThreshold,
-        Fillers: s.RemoveFillers ? (s.Fillers ?? []) : null);
+        Fillers: s.RemoveFillers ? (s.Fillers ?? []) : null,
+        InterimIntervalMs: s.ShowInterim ? DefaultInterimIntervalMs : 0);
 }
 
 public sealed record PttDependencies(
@@ -51,6 +57,9 @@ public sealed class PushToTalkController : IAsyncDisposable
     private long _pressAt, _startedAt;
     private nint _target;
     private IRecording? _rec;
+    private CancellationTokenSource? _interimCts;   // 押下中の途中経過の作り直し(離す・取り消しで止める)
+    private string? _interim;                       // 最後に押した発話の途中経過(その確定版の結末が出たら消す)
+    private int _interimSeq;
     private OverlayView? _transient;
     private OverlayView _last = OverlayView.Hidden;
 
@@ -91,6 +100,7 @@ public sealed class PushToTalkController : IAsyncDisposable
             if (!_modelReady) { _modelHeld = true; Emit(); return; }
             _held = true; _started = false;
             int seq = ++_seq;
+            _interim = null; _interimSeq = seq;
             _pressAt = _d.Clock.NowMs;
             _target = _d.Foreground.Current();
             Emit();
@@ -100,6 +110,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 {
                     if (!_held || _seq != seq || _started) return;
                     _started = true; _startedAt = _d.Clock.NowMs; Emit();
+                    StartInterim(seq);
                 }
             });
         }
@@ -112,6 +123,7 @@ public sealed class PushToTalkController : IAsyncDisposable
         {
             if (!_held) return;
             _held = false;
+            StopInterim(); _interim = null;
             _rec?.Abort(); _rec = null;
             long now = _d.Clock.NowMs;
             Report(new(_seq, Outcome.Cancelled, CancelReason.OtherKey, null, _pressAt, MicOpen(), now - _pressAt, null, null));
@@ -132,12 +144,15 @@ public sealed class PushToTalkController : IAsyncDisposable
             }
             if (!_held) return;
             _held = false;
+            // 途中経過の作り直しを止める(確定版の文字起こしを待たせない)。最後の途中経過は処理中の間も出しておく
+            StopInterim();
             var rec = _rec; _rec = null;
             long now = _d.Clock.NowMs, held = now - _pressAt;
             var ctx = new Ctx(_seq, _target, _pressAt, _started ? _startedAt : null, now);
             if (held < _o.MinPressSeconds * 1000 || rec is null)
             {
                 rec?.Abort();
+                _interim = null;
                 _transient = new OverlayView(OverlayState.Cancelled);
                 Report(new(ctx.Seq, Outcome.Cancelled, CancelReason.TooShort, null, ctx.PressAt, MicOpen(), held, null, null));
                 Emit();
@@ -252,6 +267,7 @@ public sealed class PushToTalkController : IAsyncDisposable
         lock (_gate)
         {
             _pending--;
+            if (ctx.Seq == _interimSeq) _interim = null;
             _transient = transient;
             long now = _d.Clock.NowMs;
             Report(new(ctx.Seq, o, r, text, ctx.PressAt, ctx.StartedAt - ctx.PressAt, ctx.ReleasedAt - ctx.PressAt,
@@ -269,10 +285,64 @@ public sealed class PushToTalkController : IAsyncDisposable
         if (_modelHeld) return new(OverlayState.ModelPreparing, 0, _modelDetail);
         if (_held)
             return !_started ? new(OverlayState.Preparing, _pending)
-                : _pending > 0 ? new(OverlayState.ProcessingAndRecording, _pending)
-                : new(OverlayState.Recording);
-        if (_pending > 0) return new(OverlayState.Processing, _pending);
+                : _pending > 0 ? new(OverlayState.ProcessingAndRecording, _pending, null, _interim)
+                : new(OverlayState.Recording, 0, null, _interim);
+        if (_pending > 0) return new(OverlayState.Processing, _pending, null, _interim);
         return _transient ?? OverlayView.Hidden;
+    }
+
+    /// <summary>録音中になった発話の途中経過の作り直しを始める(ロック内で呼ぶ)。</summary>
+    private void StartInterim(int seq)
+    {
+        if (_o.InterimIntervalMs <= 0) return;
+        StopInterim();
+        var cts = _interimCts = new CancellationTokenSource();
+        _ = Task.Run(() => InterimLoopAsync(seq, cts.Token));
+    }
+
+    private void StopInterim()
+    {
+        _interimCts?.Cancel();
+        _interimCts = null;
+    }
+
+    /// <summary>
+    /// 押下中、一定間隔でそれまでの音声の写しを頭から文字起こしし直し、途中経過としてオーバーレイにだけ出す(届けない)。
+    /// 前の発話の確定版を処理している間(処理待ちがある間)は作らない: エンジンは 1 つで、確定版を待たせないため。
+    /// </summary>
+    private async Task InterimLoopAsync(int seq, CancellationToken ct)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(_o.InterimIntervalMs, ct);
+                IRecording? rec;
+                lock (_gate)
+                {
+                    if (!_held || _seq != seq) return;
+                    rec = _rec;
+                }
+                if (rec is null || Volatile.Read(ref _pending) > 0) continue;
+                var samples = rec.Snapshot();
+                if (samples.Length < Audio.SampleRate / 2 || Audio.PeakFrameRms(samples) < _o.SilenceThreshold) continue;
+                samples = Audio.TrimSilence(samples, _o.SilenceThreshold);
+                string text;
+                try { text = (await _d.Transcriber.TranscribeAsync(samples, null, ct)).Trim(); }
+                catch (OperationCanceledException) { return; }
+                catch (Exception) { continue; } // 途中経過は出せなくても録音と確定版には響かせない
+                // 確定版と同じく言い淀みを除いて見せる(押下中に「ええ」が見えて、届いた確定版から消えている、という食い違いを出さない)
+                if (_o.Fillers is { Count: > 0 } words) text = Core.Fillers.Remove(text, words).Text;
+                lock (_gate)
+                {
+                    if (ct.IsCancellationRequested || !_held || _seq != seq) return;
+                    if (text.Length == 0 || text == _interim) continue;
+                    _interim = text;
+                    Emit();
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private void Emit()
@@ -286,6 +356,7 @@ public sealed class PushToTalkController : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _queue.Writer.TryComplete();
+        lock (_gate) StopInterim();
         _cts.Cancel();
         try { await _worker; } catch { }
         _cts.Dispose();

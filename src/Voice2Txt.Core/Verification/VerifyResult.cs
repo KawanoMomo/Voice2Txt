@@ -68,6 +68,8 @@ public sealed class StateRecord
     public long AtMs { get; set; }
     public string State { get; set; } = "";
     public string Text { get; set; } = "";
+    /// <summary>この状態で出していた途中経過の文字数(本文は書かない)。</summary>
+    public int InterimChars { get; set; }
     public string? Screenshot { get; set; }
     public string? Capture { get; set; } // screen / render
 
@@ -83,6 +85,8 @@ public sealed class ShotRecord
     public string State { get; set; } = "";
     /// <summary>撮ったときに音量バーへ描いていた値(0〜1)。</summary>
     public double Meter { get; set; }
+    /// <summary>撮ったときにオーバーレイへ描いていた途中経過の文字数(本文は書かない)。</summary>
+    public int InterimChars { get; set; }
     public string? Screenshot { get; set; }
     public string? Capture { get; set; }
 }
@@ -207,6 +211,8 @@ public static class Evaluator
                 if (x.State is not null && x.State != got.State) fails.Add($"shot「{x.Name}」の状態 {got.State}(期待 {x.State})");
                 if (x.MinMeter is { } lo && got.Meter < lo) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(下限 {lo:0.00})");
                 if (x.MaxMeter is { } hi && got.Meter > hi) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(上限 {hi:0.00})");
+                if (x.MinInterimChars is { } ilo && got.InterimChars < ilo) fails.Add($"shot「{x.Name}」の途中経過 {got.InterimChars} 文字(下限 {ilo})");
+                if (x.MaxInterimChars is { } ihi && got.InterimChars > ihi) fails.Add($"shot「{x.Name}」の途中経過 {got.InterimChars} 文字(上限 {ihi})");
             }
         return fails;
     }
