@@ -12,6 +12,7 @@ Voice2Txt(MIT、`LICENSE`)が同梱・参照する他者の著作物と、その
 | Whisper.net.Runtime.Cuda | 1.9.1 | MIT | Copyright (c) 2024 sandrohanea | 同上(whisper.cpp の CUDA 版のネイティブ実行時ライブラリを含む) |
 | whisper.cpp / ggml(Whisper.net.Runtime(.Cuda) に含まれる) | Whisper.net 1.9.1 が同梱する版 | MIT | Copyright (c) 2023-2024 The ggml authors | https://github.com/ggml-org/whisper.cpp |
 | NAudio.WinMM / NAudio.Core | 3.1.0 | MIT | Copyright (c) Mark Heath | https://github.com/naudio/NAudio |
+| .NET ランタイム / Windows Forms(配布物は self-contained で同梱) | 10.0 | MIT | Copyright (c) .NET Foundation and Contributors | https://github.com/dotnet/runtime / https://github.com/dotnet/winforms |
 
 各ライセンスの全文は下の「MIT License」(著作権者の行をそれぞれの名前に読み替える)。
 
