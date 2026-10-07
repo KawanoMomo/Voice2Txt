@@ -1,0 +1,42 @@
+{
+  "name": "junior-4",
+  "persona": "junior",
+  "step": 4,
+  "description": "連投が欠けず順序どおりに届く: 4 本を離したら待たずに次を押して話す。1 本目は他アプリがクリップボードを掴んでいる間(2.6 秒)に離すので、2 本目が処理待ちになる。貼り付け先は Ctrl+V を受けてから 0.4 秒後にクリップボードを読む(遅いアプリ)。前の発話が欠けたり、同じ発話が 2 回貼られたりせず、テキスト欄に 4 本が話した順に 1 回ずつ入る",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "pasteReadDelay", "ms": 400 },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-09.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "lockClipboard", "ms": 2600 },
+    { "do": "release" },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-14.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "release" },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-13.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-10.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 }
+  ],
+  "expect": {
+    "deliveries": [
+      { "to": "textbox", "text": "新しい担当者を紹介します。", "minSimilarity": 0.8 },
+      { "to": "textbox", "text": "お願いします。", "minSimilarity": 0.8 },
+      { "to": "textbox", "text": "はい、了解です。", "minSimilarity": 0.8 },
+      { "to": "textbox", "text": "以上で報告を終わります。", "minSimilarity": 0.8 }
+    ],
+    "textbox": { "text": "新しい担当者を紹介します。お願いします。はい、了解です。以上で報告を終わります。", "minSimilarity": 0.9 },
+    "states": ["録音中", "処理中+次を録音中", "貼り付け完了"],
+    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)", "入力失敗"],
+    "cancellations": [],
+    "screenshots": ["処理中+次を録音中"]
+  }
+}

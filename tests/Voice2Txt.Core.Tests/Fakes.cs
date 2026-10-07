@@ -63,6 +63,25 @@ internal sealed class FakePaster(FakeClipboard clip, FakeForeground fg) : IPaste
     public void SendPaste() { lock (Pasted) Pasted.Add((fg.Window, clip.Text!)); }
 }
 
+/// <summary>遅い貼り付け先: Ctrl+V を受けてから ReadDelayMs 後にクリップボードを読む(本物の貼り付け先は自分の入力を処理した時に読む)。</summary>
+internal sealed class LatePaster(FakeClipboard clip, int readDelayMs) : IPasteSender
+{
+    public readonly List<string> Pasted = [];
+    private readonly List<Task> _reads = [];
+
+    public void SendPaste()
+    {
+        var t = Task.Run(async () =>
+        {
+            await Task.Delay(readDelayMs);
+            lock (Pasted) Pasted.Add(clip.Text!);
+        });
+        lock (_reads) _reads.Add(t);
+    }
+
+    public Task Drain() { lock (_reads) return Task.WhenAll(_reads.ToArray()); }
+}
+
 /// <summary>音声の長さ(サンプル数)から文字列を作る。発話ごとの遅延を指定できる。</summary>
 internal sealed class FakeTranscriber : ITranscriber
 {

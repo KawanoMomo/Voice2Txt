@@ -15,8 +15,10 @@ public sealed record UtteranceReport(
 
 /// <param name="ClipboardRetryMs">他アプリがクリップボードを開いたままのとき、確定版を入れるまで粘る時間。その間、後の発話は順番を待つ。</param>
 /// <param name="ClipboardRetryIntervalMs">粘る間の試行の間隔。</param>
+/// <param name="PasteSettleMs">Ctrl+V を送ってから次の確定版でクリップボードを上書きするまで空ける最短の時間(貼り付け先がクリップボードを読むのは
+/// 自分の入力を処理した時で、Ctrl+V を送った時ではない)。前の Ctrl+V の後に押した発話は押下だけでこれ以上経つのがふつうで、待つのは処理待ちの発話。</param>
 public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01,
-    int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50)
+    int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500)
 {
     public static PttOptions From(AppSettings s) => new(s.MinPressSeconds, s.SilenceThreshold);
 }
@@ -39,6 +41,7 @@ public sealed class PushToTalkController : IAsyncDisposable
     private readonly Channel<(Ctx Ctx, Task<float[]> Audio)> _queue = Channel.CreateUnbounded<(Ctx, Task<float[]>)>(new() { SingleReader = true });
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _worker;
+    private System.Diagnostics.Stopwatch? _sincePaste;   // 最後に Ctrl+V を送ってから(worker だけが触る)
 
     private bool _held, _started, _modelHeld, _modelReady;
     private string? _modelDetail;
@@ -182,6 +185,8 @@ public sealed class PushToTalkController : IAsyncDisposable
                     Finish(ctx, Outcome.Cancelled, CancelReason.NoText, null, tMs, new(OverlayState.CancelledSilence));
                     continue;
                 }
+                // 前の発話の Ctrl+V を貼り付け先が読み終える前に上書きしない(処理待ちの発話だけがここで待つ)。
+                if (!await SettleAfterPasteAsync()) return;
                 // 確定版をクリップボードへ(入るまで粘る)。入らなければ「Ctrl+V で貼れます」とは言わず、入力失敗を知らせる。
                 var clipError = await PutOnClipboardAsync(text);
                 if (clipError is not null)
@@ -193,7 +198,11 @@ public sealed class PushToTalkController : IAsyncDisposable
                 Outcome outcome;
                 try
                 {
-                    if (_d.Foreground.Current() == ctx.Target) { _d.Paster.SendPaste(); outcome = Outcome.Pasted; }
+                    if (_d.Foreground.Current() == ctx.Target)
+                    {
+                        _sincePaste = System.Diagnostics.Stopwatch.StartNew();
+                        _d.Paster.SendPaste(); outcome = Outcome.Pasted;
+                    }
                     else outcome = Outcome.Evacuated;
                 }
                 catch (Exception ex) { Finish(ctx, Outcome.Evacuated, CancelReason.Error, text, tMs, new(OverlayState.Evacuated), ex.Message); continue; }
@@ -202,6 +211,16 @@ public sealed class PushToTalkController : IAsyncDisposable
             }
         }
         catch (OperationCanceledException) { }
+    }
+
+    /// <summary>直前の Ctrl+V から <see cref="PttOptions.PasteSettleMs"/> 経つまで待つ。経っていれば待たない。止められたら false。</summary>
+    private async Task<bool> SettleAfterPasteAsync()
+    {
+        if (_sincePaste is null) return true;
+        long rest = _o.PasteSettleMs - _sincePaste.ElapsedMilliseconds;
+        if (rest <= 0) return true;
+        try { await Task.Delay((int)rest, _cts.Token); return true; }
+        catch (OperationCanceledException) { return false; }
     }
 
     /// <summary>確定版をクリップボードへ入れる。入れば null、粘っても入らなければ最後の失敗の理由。</summary>

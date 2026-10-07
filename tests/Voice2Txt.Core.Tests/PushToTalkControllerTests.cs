@@ -210,6 +210,44 @@ public class PushToTalkControllerTests
         Assert.Equal([1, 2], r.Reports.Select(x => x.Seq).ToArray());
     }
 
+    /// <summary>貼り付け先が Ctrl+V を遅れて読む。処理待ちの次の発話がその前にクリップボードを上書きすると、前の発話が欠けて次が 2 回貼られる。</summary>
+    [Fact]
+    public async Task 処理待ちの連投でも_貼り付け先が読み終える前に次の確定版でクリップボードを上書きしない()
+    {
+        var clock = new FakeClock(); var rec = new FakeRecorder(); var fg = new FakeForeground(); var clip = new FakeClipboard();
+        var paster = new LatePaster(clip, readDelayMs: 150);
+        var engine = new FakeTranscriber();
+        var first = new TaskCompletionSource();
+        engine.Delay = s => s.Length == Audio.SampleRate ? first.Task : Task.Delay(80);
+        await using var ptt = new PushToTalkController(new PttDependencies(rec, fg, clip, paster, engine, clock), new PttOptions());
+        ptt.SetModelStatus(true);
+        foreach (var sec in new[] { 1.0, 0.5, 0.25 })   // 1 本目の処理中に 2・3 本目を録り終える(処理待ち 2 件)
+        {
+            rec.NextAudio = FakeRecorder.Tone(sec);
+            ptt.OnTalkKeyDown(); clock.NowMs += 1000; ptt.OnTalkKeyUp();
+        }
+        first.SetResult();
+        Assert.True(await ptt.WaitIdleAsync(TimeSpan.FromSeconds(10)));
+        await paster.Drain();
+        Assert.Equal([$"len{Audio.SampleRate}", $"len{Audio.SampleRate / 2}", $"len{Audio.SampleRate / 4}"], paster.Pasted);
+    }
+
+    [Fact]
+    public async Task 処理待ちが無ければ_貼り付けの後の待ちで届くのは遅れない()
+    {
+        await using var r = new Rig(new PttOptions(PasteSettleMs: 2000));
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        r.Utter(1000);
+        await r.Idle();
+        Assert.True(sw.ElapsedMilliseconds < 1000, $"1 本目 {sw.ElapsedMilliseconds} ms");   // 前に貼ったものが無ければ待たない
+        await Task.Delay(2100);                         // 前の貼り付けから間合いより後に話した次の発話も待たない
+        sw.Restart();
+        r.Utter(1000);
+        await r.Idle();
+        Assert.True(sw.ElapsedMilliseconds < 1000, $"2 本目 {sw.ElapsedMilliseconds} ms");
+        Assert.Equal(2, r.Paster.Pasted.Count);
+    }
+
     [Fact]
     public async Task 処理待ちの件数をオーバーレイに出す()
     {
