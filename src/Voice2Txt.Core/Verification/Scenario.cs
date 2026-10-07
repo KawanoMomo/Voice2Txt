@@ -89,6 +89,12 @@ public sealed class Expectation
     /// <summary>読めていなければならない文字起こしのバックエンド(Cuda / Cpu)。</summary>
     public string? Runtime { get; set; }
 
+    /// <summary>動いた exe の版(v{major}.{minor})。result.json の version と、トレイのツールチップの文言に出ていること。</summary>
+    public string? Version { get; set; }
+
+    /// <summary>版の期待をファイル(リポジトリ直下の VERSION)から作る(台本からの相対。tools/Verify が <see cref="Version"/> に解く)。</summary>
+    public string? VersionFile { get; set; }
+
     /// <summary>読み込めていなければならないモデルの名前(ModelCatalog の名前)。</summary>
     public string? Model { get; set; }
 

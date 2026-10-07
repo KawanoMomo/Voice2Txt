@@ -47,6 +47,7 @@ foreach (var file in files)
     try
     {
         var sc = Scenario.Load(file);
+        if (sc.Expect.VersionFile is { } vf) sc.Expect.Version ??= AppVersion.Tag(File.ReadAllText(Scenario.ResolvePath(file, vf)));
         using var p = Process.Start(new ProcessStartInfo(exe)
         {
             ArgumentList = { "--verify", "--scenario", file, "--out", dir },

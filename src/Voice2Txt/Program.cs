@@ -38,7 +38,7 @@ internal static class Program
         var settingsPath = Path.Combine(AppSettings.DefaultDirectory, "settings.json");
         var settings = AppSettings.LoadOrCreate(settingsPath);
         AppLog.Path = Path.Combine(AppSettings.DefaultDirectory, "logs", "app.log");
-        AppLog.Write("start");
+        AppLog.Write($"start version={AppVersion.Tag(AppVersion.Current)}");
         var app = new TrayApp(settings, settingsPath);
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEvent);
         var wait = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => app.NotifyAlreadyRunning(), null, -1, false);
