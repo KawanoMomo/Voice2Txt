@@ -1,5 +1,6 @@
 # CHANGELOG
 
+- BLK-human-20261007-2229-2: オーバーレイの案内の行(録音中の赤い点・「右 Ctrl を離すと入力」・文字起こし中… など)が一番下に固定され、途中経過はその上に積まれる。途中経過が 1 行でも 3 行でも、幅が伸びても案内の行は画面上で動かない。検証モードの shot は途中経過の行数と案内の行の位置を結果に残す(台本の期待 `minInterimLines` / `maxInterimLines` / `sameHintRowAs`)
 - BLK-human-20261007-2229-1: 無音のしきい値を下回る小さい声(感度の低いマイク)でも、マイクの雑音よりはっきり大きい声が続けば取り消し(無音)にせず確定版を届ける。途中経過が出る前に離しても同じ(途中経過も小さい声で出る)。発話ごとのログに録音の大きさ `peakRms` を書く
 - BLK-human-20261007-2050-3: タグ `v*` の push で GitHub Actions が `Voice2Txt-{版}-setup.exe`(Inno Setup、自分だけに入れる)と `Voice2Txt-{版}-portable.zip` を作り Release に付ける(中身は自作コードと MIT の依存だけ。NVIDIA の DLL とモデルは入れず、入っていれば止める)。手元でも `packaging\build.ps1 -Version 1.0` で同じものを作れる
 - BLK-human-20261007-2120-1: 製品名が `Voice2Txt` になる(名前空間・プロジェクト・フォルダ・exe `Voice2Txt.exe`・設定等の置き場 `%APPDATA%\Voice2Txt` / `%LOCALAPPDATA%\Voice2Txt`・Run の値名・mutex・文書)。通常起動の最初に旧名の置き場の中身を移し、旧名の自動起動を外す(ログ `legacy-migrated`)。旧名の版が動いている間は起動しない

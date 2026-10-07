@@ -93,7 +93,7 @@ internal sealed class OverlayForm : Form
     private void HideOverlay() { _anim.Stop(); if (Visible) Hide(); }
 
     // MOC の .row の gap:10px、.kbd(枠・padding 0 5px・11px)、.badge(丸・padding 1px 8px・11px)、.meter(幅 3px×5 本・間 2px)
-    private const int Gap = 10, IconW = 10, PadX = 16, KeyPad = 5, BadgePad = 8, MeterW = 5 * 3 + 4 * 2;
+    private const int Gap = 10, IconW = 10, PadX = OverlayLayout.PadX, KeyPad = 5, BadgePad = 8, MeterW = 5 * 3 + 4 * 2;
     private const TextFormatFlags Flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
     private static readonly Color KeyBorder = Color.FromArgb(128, 255, 255, 255), BadgeFill = Color.FromArgb(46, 255, 255, 255);
     private readonly Font _small = new("Yu Gothic UI", 8.25f);
@@ -108,37 +108,48 @@ internal sealed class OverlayForm : Form
 
     private int PartsWidth(IReadOnlyList<OverlayPart> parts) => parts.Sum(PartWidth) + Gap * Math.Max(0, parts.Count - 1);
 
-    // 途中経過の欄(MOC の .partial: 本文の下に区切り線、折り返して数行。収まらなければ頭を削って末尾を残す)
-    private const int InterimMaxW = 520, InterimTop = 4, InterimBottom = 10;
+    // 途中経過の欄(MOC の .partial: 本文と区切り線で分け、折り返して数行。収まらなければ頭を削って末尾を残す)。
+    // 常に出る案内の行は一番下に固定し、途中経過はその上に積む(OverlayLayout)
+    private const int InterimMaxW = 520;
     private const TextFormatFlags WrapFlags = TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl;
     private static readonly Color InterimColor = Color.FromArgb(0xEB, 0xEB, 0xEB), Rule = Color.FromArgb(51, 255, 255, 255);
     private readonly Font _interimFont = new("Yu Gothic UI", 10.5f);
     private int _rowH;
     private string? _interimShown;
+    private int _interimLines;
     private Rectangle _interimBox;
+    private OverlayLayout _layout;
 
     /// <summary>今オーバーレイに描いている途中経過(欄に収めた後の文字列。無ければ null)。</summary>
     public string? InterimShown => _interimShown;
+
+    /// <summary>今描いている途中経過の行数(無ければ 0)。</summary>
+    public int InterimLines => _interimShown is null ? 0 : _interimLines;
+
+    /// <summary>常に出る案内の行(状態の印と本文)の、画面上の左上(px)。</summary>
+    public Point HintRowOnScreen => new(Bounds.Left + _layout.RowLeft, Bounds.Top + _layout.RowTop);
 
     private Size MeasureWrapped(string s, int width) => TextRenderer.MeasureText(s, _interimFont, new Size(width, int.MaxValue), WrapFlags);
 
     private void LayoutFor(OverlayView v)
     {
-        int w = PadX + IconW + Gap + PartsWidth(v.Parts(_talkKeyName)) + PadX, h = _rowH;
+        int rowW = IconW + Gap + PartsWidth(v.Parts(_talkKeyName)), tw = 0, th = 0;
         _interimShown = null;
         if (!string.IsNullOrEmpty(v.Interim))
         {
             int lineH = TextRenderer.MeasureText("あ", _interimFont, Size.Empty, Flags).Height;
             int oneLine = TextRenderer.MeasureText(v.Interim, _interimFont, Size.Empty, Flags).Width + 2;
-            int tw = Math.Min(InterimMaxW, Math.Max(w - 2 * PadX, oneLine));
+            tw = Math.Min(InterimMaxW, Math.Max(rowW, oneLine));
             _interimShown = OverlayView.FitInterim(v.Interim, s => MeasureWrapped(s, tw).Height <= lineH * OverlayView.InterimMaxLines);
-            _interimBox = new Rectangle(PadX, _rowH + InterimTop, tw, MeasureWrapped(_interimShown, tw).Height);
-            w = Math.Max(w, tw + 2 * PadX);
-            h = _interimBox.Bottom + InterimBottom;
+            th = MeasureWrapped(_interimShown, tw).Height;
+            _interimLines = Math.Max(1, (th + lineH / 2) / lineH);
         }
+        _layout = OverlayLayout.Of(rowW, _rowH, tw, th);
+        _interimBox = new Rectangle(PadX, _layout.InterimTop, tw, th);
         var wa = Screen.PrimaryScreen!.WorkingArea;
-        Bounds = new Rectangle(wa.Left + (wa.Width - w) / 2, wa.Bottom - 18 - h, w, h);
-        using var path = Rounded(new Rectangle(0, 0, w, h), Radius);
+        var (left, top) = _layout.Place(wa.Left, wa.Width, wa.Bottom, rowW);
+        Bounds = new Rectangle(left, top, _layout.Width, _layout.Height);
+        using var path = Rounded(new Rectangle(0, 0, _layout.Width, _layout.Height), Radius);
         Region = new Region(path);
     }
 
@@ -161,7 +172,7 @@ internal sealed class OverlayForm : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Bg);
         var v = _view;
-        int cy = _rowH / 2, x = 16;
+        int cy = _layout.RowTop + _rowH / 2, x = _layout.RowLeft;
         switch (v.State)
         {
             case OverlayState.Preparing:
@@ -216,7 +227,7 @@ internal sealed class OverlayForm : Form
         }
         if (_interimShown is not null)
         {
-            using (var pen = new Pen(Rule)) g.DrawLine(pen, PadX, _rowH - 1, size.Width - PadX, _rowH - 1);
+            using (var pen = new Pen(Rule)) g.DrawLine(pen, PadX, _layout.RowTop, size.Width - PadX, _layout.RowTop);
             TextRenderer.DrawText(g, _interimShown, _interimFont, _interimBox, InterimColor, WrapFlags);
         }
     }

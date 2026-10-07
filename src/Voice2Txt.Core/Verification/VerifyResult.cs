@@ -103,6 +103,11 @@ public sealed class ShotRecord
     public double Meter { get; set; }
     /// <summary>撮ったときにオーバーレイへ描いていた途中経過の文字数(本文は書かない)。</summary>
     public int InterimChars { get; set; }
+    /// <summary>撮ったときの途中経過の行数(無ければ 0)。</summary>
+    public int InterimLines { get; set; }
+    /// <summary>常に出る案内の行(状態の印と本文)の、画面上の左上(px)。</summary>
+    public int HintRowX { get; set; }
+    public int HintRowY { get; set; }
     public string? Screenshot { get; set; }
     public string? Capture { get; set; }
 }
@@ -246,6 +251,15 @@ public static class Evaluator
                 if (x.MaxMeter is { } hi && got.Meter > hi) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(上限 {hi:0.00})");
                 if (x.MinInterimChars is { } ilo && got.InterimChars < ilo) fails.Add($"shot「{x.Name}」の途中経過 {got.InterimChars} 文字(下限 {ilo})");
                 if (x.MaxInterimChars is { } ihi && got.InterimChars > ihi) fails.Add($"shot「{x.Name}」の途中経過 {got.InterimChars} 文字(上限 {ihi})");
+                if (x.MinInterimLines is { } llo && got.InterimLines < llo) fails.Add($"shot「{x.Name}」の途中経過 {got.InterimLines} 行(下限 {llo})");
+                if (x.MaxInterimLines is { } lhi && got.InterimLines > lhi) fails.Add($"shot「{x.Name}」の途中経過 {got.InterimLines} 行(上限 {lhi})");
+                if (x.SameHintRowAs is { } other)
+                {
+                    var o = r.Shots.FirstOrDefault(s => s.Name == other);
+                    if (o is null) fails.Add($"shot「{x.Name}」と比べる shot「{other}」が無い");
+                    else if (o.HintRowX != got.HintRowX || o.HintRowY != got.HintRowY)
+                        fails.Add($"shot「{x.Name}」の案内の行の位置 ({got.HintRowX},{got.HintRowY}) が shot「{other}」({o.HintRowX},{o.HintRowY}) と違う");
+                }
             }
         return fails;
     }

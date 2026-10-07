@@ -151,11 +151,12 @@ internal sealed class VerifyHost : ApplicationContext
         var rec = new ShotRecord
         {
             Name = name, AtMs = _sw.ElapsedMilliseconds, State = v.Label, Meter = Math.Round(meter, 3),
-            InterimChars = _overlay.InterimShown?.Length ?? 0, Screenshot = "shots/" + file,
+            InterimChars = _overlay.InterimShown?.Length ?? 0, InterimLines = _overlay.InterimLines,
+            HintRowX = _overlay.HintRowOnScreen.X, HintRowY = _overlay.HintRowOnScreen.Y, Screenshot = "shots/" + file,
         };
         rec.Capture = _overlay.SaveScreenshot(Path.Combine(_shots, file));
         lock (_result) _result.Shots.Add(rec);
-        AppLog.Write($"shot {name} state={v.Label} meter={rec.Meter} interim={rec.InterimChars} capture={rec.Capture}");
+        AppLog.Write($"shot {name} state={v.Label} meter={rec.Meter} interim={rec.InterimChars} lines={rec.InterimLines} row=({rec.HintRowX},{rec.HintRowY}) capture={rec.Capture}");
     }
 
     /// <summary>台本のキー 1 つをトークキーの判定に通す(キーボードフックと同じ)。名前の省略はトークキー。</summary>

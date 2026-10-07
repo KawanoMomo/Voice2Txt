@@ -48,7 +48,7 @@ public sealed class Scenario
 /// release(キー key を離す。省略時はトークキー)/ key(キー key を押して離す。省略時 C)/ focus(前面を window = "textbox" か "other" に切り替える)/
 /// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)/
 /// pasteReadDelay(以後、検証用のテキスト欄が Ctrl+V を受けてから ms 後にクリップボードを読む。遅い貼り付け先。0 で即時)/
-/// shot(今のオーバーレイを name の名で撮り、そのときの状態・音量バーの値・途中経過の文字数を結果の shots に残す)/
+/// shot(今のオーバーレイを name の名で撮り、そのときの状態・音量バーの値・途中経過の文字数と行数・案内の行の画面上の位置を結果の shots に残す)/
 /// openSettings(トレイの「設定…」と同じ設定画面を開いて撮る)/ setSetting(項目 name に値 value を入れる)/
 /// saveSettings(撮ってから保存を押す。&lt;out&gt;/settings.json に書く)/ restart(その settings.json を読み直して受け付け直す = 再起動)
 /// </summary>
@@ -135,6 +135,11 @@ public sealed class ShotExpectation
     /// <summary>オーバーレイに描いていた途中経過の文字数の下限・上限(省略可。上限 0 なら途中経過が出ていないこと)。</summary>
     public int? MinInterimChars { get; set; }
     public int? MaxInterimChars { get; set; }
+    /// <summary>途中経過の行数の下限・上限(省略可)。</summary>
+    public int? MinInterimLines { get; set; }
+    public int? MaxInterimLines { get; set; }
+    /// <summary>常に出る案内の行(状態の印と本文)の画面上の位置が、この名前の shot と同じであること(省略可)。</summary>
+    public string? SameHintRowAs { get; set; }
 }
 
 public sealed class TextExpectation
