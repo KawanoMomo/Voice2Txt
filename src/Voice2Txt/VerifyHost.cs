@@ -12,25 +12,28 @@ namespace Voice2Txt;
 /// 設定は台本の settings だけを使う(%APPDATA% の settings.json は読まない)。
 /// 貼り付け先の判定は仮の前面(<see cref="VirtualForeground"/>)で行うが、オーバーレイがフォーカスを奪っていないかは
 /// 本物の前面ウィンドウを一定間隔と状態が変わるたびに調べて結果に残す。
+/// 設定画面は台本の openSettings / setSetting / saveSettings で本物の部品を操作し、&lt;out&gt;/settings.json に保存する。
+/// restart はアプリを起動し直したのと同じく、その settings.json を読み直してトークキー・設定(モデルが変われば読み込みも)をやり直す。
 /// </summary>
 internal sealed class VerifyHost : ApplicationContext
 {
     private readonly Scenario _sc;
-    private readonly string _scenarioPath, _out, _shots;
-    private readonly AppSettings _settings;
-    private readonly Keys _talkKey;
-    private readonly TalkKeyFilter _keys;
+    private readonly string _scenarioPath, _out, _shots, _settingsPath;
+    private AppSettings _settings;
+    private Keys _talkKey;
+    private TalkKeyFilter _keys;
     private readonly VerifyTextForm _textForm;
     private readonly OverlayForm _overlay;
     private readonly VerifyRecorder _recorder = new();
     private readonly VirtualForeground _fg;
     private readonly MemoryClipboard _clip = new();
     private readonly TextBoxPaster _paster;
-    private readonly PushToTalkController _ptt;
+    private PushToTalkController _ptt;
     private readonly DeferredTranscriber _engine = new();
     private readonly VerifyResult _result;
     private readonly Stopwatch _sw = Stopwatch.StartNew();
-    private readonly TaskCompletionSource _modelReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _modelReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private SettingsForm? _settingsForm;
     private int _shotNo;
     private readonly System.Windows.Forms.Timer _fgProbe = new() { Interval = 25 };
 
@@ -40,17 +43,12 @@ internal sealed class VerifyHost : ApplicationContext
         _sc = Scenario.Load(scenarioPath);
         _out = Path.GetFullPath(outDir);
         _shots = Path.Combine(_out, "shots");
+        _settingsPath = Path.Combine(_out, "settings.json");
         Directory.CreateDirectory(_shots);
         AppLog.Path = Path.Combine(_out, "verify.log");
         _result = new VerifyResult { Scenario = _sc.Name, Version = AppVersion.Tag(AppVersion.Current), TrayTooltip = AppVersion.TrayText("モデル準備中") };
         _settings = _sc.Settings ?? new AppSettings();
-        _talkKey = TalkKeys.Parse(_settings.TalkKey);
-        _keys = new TalkKeyFilter((int)_talkKey);
-        if (TalkKeys.InvalidWarning(_settings.TalkKey) is { } warn)
-        {
-            _result.Warnings.Add(warn);
-            AppLog.Write($"talkkey-invalid name={_settings.TalkKey} fallback={TalkKeys.Default}");
-        }
+        (_talkKey, _keys) = TalkKeyOf(_settings);
 
         _textForm = new VerifyTextForm();
         _textForm.Show();
@@ -59,15 +57,65 @@ internal sealed class VerifyHost : ApplicationContext
         _fg = new VirtualForeground(_textForm.Handle);
 
         _paster = new TextBoxPaster(_textForm, _clip);
-        _ptt = new PushToTalkController(
-            new PttDependencies(_recorder, _fg, _clip, _paster, _engine, new SystemClock()),
-            PttOptions.From(_settings));
-        _ptt.OverlayChanged += v => _overlay.BeginInvoke(() => OnOverlay(v));
-        _ptt.Finished += OnFinished;
+        _ptt = CreatePtt();
         _fgProbe.Tick += (_, _) => ProbeForeground();
         _fgProbe.Start();
 
         _ = RunAsync();
+    }
+
+    /// <summary>設定のトークキーと、それを判定するフィルタ。読めなければ右 Ctrl にし、警告を結果に残す。</summary>
+    private (Keys, TalkKeyFilter) TalkKeyOf(AppSettings s)
+    {
+        var key = TalkKeys.Parse(s.TalkKey);
+        if (TalkKeys.InvalidWarning(s.TalkKey) is { } warn)
+        {
+            lock (_result) _result.Warnings.Add(warn);
+            AppLog.Write($"talkkey-invalid name={s.TalkKey} fallback={TalkKeys.Default}");
+        }
+        return (key, new TalkKeyFilter((int)key));
+    }
+
+    private PushToTalkController CreatePtt()
+    {
+        var p = new PushToTalkController(
+            new PttDependencies(_recorder, _fg, _clip, _paster, _engine, new SystemClock()),
+            PttOptions.From(_settings));
+        p.OverlayChanged += v => _overlay.BeginInvoke(() => OnOverlay(v));
+        p.Finished += OnFinished;
+        return p;
+    }
+
+    /// <summary>台本の restart: 保存した settings.json を読み直し、アプリを起動し直したのと同じ設定で受け付け直す。</summary>
+    private async Task RestartAsync()
+    {
+        await _ptt.WaitIdleAsync(TimeSpan.FromSeconds(30));
+        var old = _ptt;
+        var next = AppSettings.LoadOrCreate(_settingsPath);
+        bool modelChanged = !string.Equals(ModelCatalog.TryGet(next.Model, out var a) ? a.Name : next.Model,
+                                           ModelCatalog.TryGet(_settings.Model, out var b) ? b.Name : _settings.Model, StringComparison.OrdinalIgnoreCase);
+        _settings = next;
+        (_talkKey, _keys) = TalkKeyOf(next);
+        _overlay.Invoke(() => _overlay.SetTalkKeyName(TalkKeys.DisplayName(_talkKey)));
+        _ptt = CreatePtt();
+        await old.DisposeAsync();
+        lock (_result) _result.Restarts++;
+        AppLog.Write($"restart talkKey={_talkKey} model={next.Model} modelChanged={modelChanged}");
+        if (modelChanged)
+        {
+            _modelReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _ = LoadEngineAsync();
+        }
+        else _ptt.SetModelStatus(_modelReady.Task.IsCompletedSuccessfully);
+    }
+
+    /// <summary>設定画面を撮る(自前で描く)。結果の shots に「設定画面」の状態で残す。</summary>
+    private void SettingsShot(string name)
+    {
+        var file = $"{++_shotNo:00}-設定画面-{Safe(name)}.png";
+        _settingsForm!.SaveScreenshot(Path.Combine(_shots, file));
+        lock (_result) _result.Shots.Add(new ShotRecord { Name = name, AtMs = _sw.ElapsedMilliseconds, State = "設定画面", Screenshot = "shots/" + file, Capture = "render" });
+        AppLog.Write($"shot {name} state=設定画面");
     }
 
     private void OnOverlay(OverlayView v)
@@ -255,6 +303,41 @@ internal sealed class VerifyHost : ApplicationContext
                     if (!await _ptt.WaitIdleAsync(TimeSpan.FromMilliseconds(a.TimeoutMs ?? 300_000)))
                         throw new TimeoutException("処理待ちが 0 にならない");
                     await Task.Delay(200);
+                    break;
+                case "openSettings":
+                    _overlay.Invoke(() =>
+                    {
+                        _settings.Save(_settingsPath); // 動いている設定がファイルにある状態から開く(本番と同じ)
+                        _settingsForm?.Close();
+                        _settingsForm = new SettingsForm(_settings, _settingsPath) { StartPosition = FormStartPosition.Manual, Location = new Point(600, 40) };
+                        _settingsForm.Saved += (_, next, changed) =>
+                        {
+                            lock (_result) { _result.SavedSettings = next; _result.SettingsChanged = changed; }
+                        };
+                        _settingsForm.Show();
+                        _settingsForm.Refresh();
+                        SettingsShot(a.Name ?? "開いた");
+                    });
+                    break;
+                case "setSetting":
+                    _overlay.Invoke(() => (_settingsForm ?? throw new InvalidOperationException("設定画面が開いていない(openSettings が先)"))
+                        .SetValue(a.Name ?? throw new InvalidDataException("setSetting に name(項目のキー)が無い"), a.Value ?? ""));
+                    break;
+                case "saveSettings":
+                    _overlay.Invoke(() =>
+                    {
+                        var form = _settingsForm ?? throw new InvalidOperationException("設定画面が開いていない(openSettings が先)");
+                        form.Refresh();
+                        SettingsShot(a.Name ?? "保存前");
+                        if (form.ClickSave() is { } err)
+                        {
+                            lock (_result) _result.SettingsErrors.Add(err);
+                            AppLog.Write("settings-error");
+                        }
+                    });
+                    break;
+                case "restart":
+                    await RestartAsync();
                     break;
                 default:
                     throw new InvalidDataException($"未知の手: {a.Do}");

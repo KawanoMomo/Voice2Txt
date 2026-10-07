@@ -45,8 +45,20 @@ internal static class Program
         Application.Run(app);
         wait.Unregister(null);
         AppLog.Write("exit");
+        if (RestartRequested)
+        {
+            // 次の自分が多重起動と見なさないよう、先に排他を手放してから起動する
+            mutex.ReleaseMutex();
+            mutex.Dispose();
+            activate.Dispose();
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath ?? Application.ExecutablePath) { UseShellExecute = false }); }
+            catch (Exception ex) { AppLog.Write("restart-error " + ex.Message); }
+        }
         return 0;
     }
+
+    /// <summary>設定画面で保存した後に「今すぐ再起動」を選んだ。終了後に自分を起動し直す。</summary>
+    public static volatile bool RestartRequested;
 
     private static string? Arg(string[] args, string name)
     {

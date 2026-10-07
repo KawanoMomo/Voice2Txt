@@ -48,7 +48,9 @@ public sealed class Scenario
 /// release(キー key を離す。省略時はトークキー)/ key(キー key を押して離す。省略時 C)/ focus(前面を window = "textbox" か "other" に切り替える)/
 /// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)/
 /// pasteReadDelay(以後、検証用のテキスト欄が Ctrl+V を受けてから ms 後にクリップボードを読む。遅い貼り付け先。0 で即時)/
-/// shot(今のオーバーレイを name の名で撮り、そのときの状態・音量バーの値・途中経過の文字数を結果の shots に残す)
+/// shot(今のオーバーレイを name の名で撮り、そのときの状態・音量バーの値・途中経過の文字数を結果の shots に残す)/
+/// openSettings(トレイの「設定…」と同じ設定画面を開いて撮る)/ setSetting(項目 name に値 value を入れる)/
+/// saveSettings(撮ってから保存を押す。&lt;out&gt;/settings.json に書く)/ restart(その settings.json を読み直して受け付け直す = 再起動)
 /// </summary>
 public sealed class ScenarioAction
 {
@@ -59,8 +61,10 @@ public sealed class ScenarioAction
     /// <summary>キーの名前(System.Windows.Forms.Keys の名前。例 RControlKey, RMenu, C)。キーはトークキーの判定に通す。</summary>
     public string? Key { get; set; }
     public string? Window { get; set; }
-    /// <summary>shot の名前(期待の shots と結び付ける)。</summary>
+    /// <summary>shot・openSettings・saveSettings の名前(期待の shots と結び付ける)。setSetting では項目のキー(例 talkKey)。</summary>
     public string? Name { get; set; }
+    /// <summary>setSetting で入れる値(設定ファイルに書く形か、画面に出す名前。例 RMenu / 右Alt)。</summary>
+    public string? Value { get; set; }
 }
 
 public sealed class Expectation
@@ -103,6 +107,12 @@ public sealed class Expectation
 
     /// <summary>押下中の別キーで合成して送ったキーの列("RControlKey down", "C down")。</summary>
     public List<string>? SentKeys { get; set; }
+
+    /// <summary>設定画面で保存した設定の値(キー → 設定ファイルに書く形の値。例 talkKey → RMenu)。</summary>
+    public Dictionary<string, string>? SavedSettings { get; set; }
+
+    /// <summary>設定画面で保存できなかった理由の列(空配列なら保存に失敗していないこと)。</summary>
+    public List<string>? SettingsErrors { get; set; }
 
     /// <summary>警告の列(空配列なら警告が無いこと)。</summary>
     public List<string>? Warnings { get; set; }

@@ -35,6 +35,16 @@ public sealed class VerifyResult
     /// <summary>設定の問題など、利用者に知らせた警告(例: talkKey を読めない)。</summary>
     public List<string> Warnings { get; set; } = [];
 
+    /// <summary>設定画面で最後に保存した設定(保存していなければ null)と、そのとき変わった項目のキー。</summary>
+    public AppSettings? SavedSettings { get; set; }
+    public List<string>? SettingsChanged { get; set; }
+
+    /// <summary>設定画面で保存できなかった理由(画面に出した文)。</summary>
+    public List<string> SettingsErrors { get; set; } = [];
+
+    /// <summary>台本の restart で設定を読み直した回数。</summary>
+    public int Restarts { get; set; }
+
     /// <summary>本物の前面ウィンドウ(GetForegroundWindow)を調べた回数(台本の実行中、一定間隔と状態が変わるたび)。</summary>
     public int ForegroundSamples { get; set; }
 
@@ -189,7 +199,19 @@ public static class Evaluator
             fails.Add($"合成して送ったキー [{string.Join(",", r.SentKeys)}](期待 [{string.Join(",", sk)}])");
         if (e.Warnings is { } ws && !r.Warnings.SequenceEqual(ws))
             fails.Add($"警告 [{string.Join(",", r.Warnings)}](期待 [{string.Join(",", ws)}])");
-        if (e.Runtime is { } rt && !string.Equals(rt, r.Runtime, StringComparison.OrdinalIgnoreCase))
+        if (e.SavedSettings is { } want)
+        {
+            if (r.SavedSettings is null) fails.Add("設定画面で保存されていない");
+            else
+                foreach (var (k, v) in want)
+                {
+                    var got = SettingsSchema.Read(r.SavedSettings, k);
+                    if (!string.Equals(got, v, StringComparison.OrdinalIgnoreCase)) fails.Add($"保存した設定 {k}={got}(期待 {v})");
+                }
+        }
+        if (e.SettingsErrors is { } se && !r.SettingsErrors.SequenceEqual(se))
+            fails.Add($"設定画面の保存の失敗 [{string.Join(" / ", r.SettingsErrors)}](期待 [{string.Join(" / ", se)}])");
+        if (e.Runtime is { } rt &&!string.Equals(rt, r.Runtime, StringComparison.OrdinalIgnoreCase))
             fails.Add($"バックエンド {r.Runtime ?? "(読めていない)"}(期待 {rt})");
         if (e.Version is { } ver)
         {

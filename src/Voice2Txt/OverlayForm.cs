@@ -13,7 +13,11 @@ internal sealed class OverlayForm : Form
     private static readonly Color Bg = Color.FromArgb(28, 28, 30), Rec = Color.FromArgb(0xE5, 0x38, 0x3B),
         Ok = Color.FromArgb(0x7E, 0xE2, 0xC8), Warn = Color.FromArgb(0xFF, 0xD1, 0x66), Muted = Color.FromArgb(0xBB, 0xBB, 0xBB);
 
-    private readonly string _talkKeyName;
+    private string _talkKeyName;
+
+    /// <summary>文言に出すトークキーの名前(検証モードの restart で設定を読み直したときに変える。UI スレッド)。</summary>
+    public void SetTalkKeyName(string name) => _talkKeyName = name;
+
     private readonly System.Windows.Forms.Timer _anim = new() { Interval = 90 };
     private readonly System.Windows.Forms.Timer _hide = new();
     private OverlayView _view = OverlayView.Hidden;
