@@ -43,6 +43,50 @@ public class AudioTests
         Assert.True(Audio.PeakFrameRms(a) > 0.05);
     }
 
+    private const double Th = 0.01;
+    private static int Sec(double s) => (int)(s * Audio.SampleRate);
+
+    [Fact]
+    public void 無音を詰める_先頭と末尾は余白だけ残す()
+    {
+        float[] a = [.. FakeRecorder.Silence(10), .. FakeRecorder.Tone(2), .. FakeRecorder.Silence(12)];
+        var t = Audio.TrimSilence(a, Th);
+        Assert.InRange(t.Length, Sec(2 + 2 * Audio.SpeechPadSeconds - 0.03), Sec(2 + 2 * Audio.SpeechPadSeconds + 0.06));
+        Assert.True(Audio.PeakFrameRms(t[..Sec(Audio.SpeechPadSeconds - 0.03)]) < Th);   // 声の前に余白
+        Assert.True(Audio.PeakFrameRms(t[^Sec(Audio.SpeechPadSeconds - 0.03)..]) < Th);  // 声の後にも余白
+    }
+
+    [Fact]
+    public void 無音を詰める_発話の間の長い無音は余白2つ分に縮み短い間はそのまま()
+    {
+        float[] longGap = [.. FakeRecorder.Tone(1), .. FakeRecorder.Silence(15), .. FakeRecorder.Tone(1)];
+        Assert.InRange(Audio.TrimSilence(longGap, Th).Length, Sec(2 + 2 * Audio.SpeechPadSeconds - 0.03), Sec(2 + 2 * Audio.SpeechPadSeconds + 0.06));
+        float[] shortGap = [.. FakeRecorder.Tone(1), .. FakeRecorder.Silence(0.5), .. FakeRecorder.Tone(1)];
+        Assert.Equal(shortGap.Length, Audio.TrimSilence(shortGap, Th).Length);
+    }
+
+    [Fact]
+    public void 無音を詰める_しきい値未満の雑音も無音として詰める()
+    {
+        var rnd = new Random(1);
+        float[] a = [.. FakeRecorder.Silence(5), .. FakeRecorder.Tone(2), .. FakeRecorder.Silence(8)];
+        for (int i = 0; i < a.Length; i++) a[i] += (float)((rnd.NextDouble() * 2 - 1) * 0.005); // 録音機器の雑音(RMS 約 0.003)
+        Assert.InRange(Audio.TrimSilence(a, Th).Length, Sec(2), Sec(2 + 2 * Audio.SpeechPadSeconds + 0.06));
+    }
+
+    [Fact]
+    public void 無音を詰める_声が無ければそのまま_詰めても1秒を割らない()
+    {
+        var sil = FakeRecorder.Silence(3);
+        Assert.Same(sil, Audio.TrimSilence(sil, Th));
+        float[] blip = [.. FakeRecorder.Silence(4), .. FakeRecorder.Tone(0.06), .. FakeRecorder.Silence(4)];
+        var t = Audio.TrimSilence(blip, Th);
+        Assert.Equal(Sec(Audio.MinDecodeSeconds), t.Length);
+        Assert.True(Audio.PeakFrameRms(t) >= Th);
+        float[] full = FakeRecorder.Tone(0.5);
+        Assert.Same(full, Audio.TrimSilence(full, Th));
+    }
+
     [Fact]
     public void 同梱の音声素材が読める()
     {

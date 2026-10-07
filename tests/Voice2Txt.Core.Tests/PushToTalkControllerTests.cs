@@ -85,6 +85,19 @@ public class PushToTalkControllerTests
     }
 
     [Fact]
+    public async Task 前後の長い無音は詰めてからWhisperに渡す()
+    {
+        await using var r = new Rig();
+        float[]? got = null;
+        r.Engine.Text = s => { got = s; return "ok"; };
+        r.Utter(25000, [.. FakeRecorder.Silence(10), .. FakeRecorder.Tone(2), .. FakeRecorder.Silence(12)]);
+        await r.Idle();
+        Assert.Equal(Outcome.Pasted, Assert.Single(r.Reports).Outcome);
+        Assert.NotNull(got);
+        Assert.InRange(got!.Length, Audio.SampleRate * 2, (int)(Audio.SampleRate * (2 + 2 * Audio.SpeechPadSeconds + 0.1)));
+    }
+
+    [Fact]
     public async Task 文字起こしが空なら何も貼らない()
     {
         await using var r = new Rig();
