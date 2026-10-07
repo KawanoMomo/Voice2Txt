@@ -20,6 +20,8 @@ public sealed class VerifyResult
     public long? ModelReadyMs { get; set; }
     /// <summary>CUDA の実行時ライブラリ: ready(runtime フォルダから読めた)か、CPU で動く理由。検証モードは取得しない。</summary>
     public string? CudaRuntime { get; set; }
+    /// <summary>モデルの準備の段階の列(段階が変わるたびと、進み具合が 10% の刻みを跨ぐたび。そのときのトレイのツールチップ付き)。</summary>
+    public List<ModelPrepRecord> ModelPrep { get; set; } = [];
     public List<DeliveryRecord> Deliveries { get; set; } = [];
     public List<CancelRecord> Cancellations { get; set; } = [];
     public List<StateRecord> States { get; set; } = [];
@@ -69,6 +71,16 @@ public sealed class DeliveryRecord
     public long? TranscribeMs { get; set; }
     /// <summary>届ける前に確定版から取り除いた言い淀みの数(設定 removeFillers)。</summary>
     public int FillersRemoved { get; set; }
+}
+
+/// <summary>モデルの準備の 1 段階(例 Stage = ダウンロード, Percent = 30)。</summary>
+public sealed class ModelPrepRecord
+{
+    public long AtMs { get; set; }
+    public string Stage { get; set; } = "";
+    public int? Percent { get; set; }
+    /// <summary>そのときトレイのツールチップに出していた文言(常駐時と同じ)。</summary>
+    public string Tooltip { get; set; } = "";
 }
 
 public sealed class CancelRecord
@@ -190,6 +202,13 @@ public static class Evaluator
             int k = 0;
             foreach (var s in seen) if (k < st.Count && s == st[k]) k++;
             if (k < st.Count) fails.Add($"状態「{st[k]}」が期待の順に現れない(実際: {string.Join(" → ", seen)})");
+        }
+        if (e.ModelPrep is { } mp)
+        {
+            var seen = r.ModelPrep.Select(s => s.Stage).ToList();
+            int k = 0;
+            foreach (var s in seen) if (k < mp.Count && s == mp[k]) k++;
+            if (k < mp.Count) fails.Add($"モデルの準備の段階「{mp[k]}」が期待の順に記録されていない(実際: {string.Join(" → ", seen.Distinct())})");
         }
         if (e.StateTexts is { } txts)
             foreach (var t in txts.Where(t => !r.States.Any(x => x.Text.Contains(t))))

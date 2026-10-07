@@ -109,12 +109,14 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
 /// <summary>モデルを用意して読み込む(起動時に 1 回。常駐中は読み込んだまま)。</summary>
 internal static class EngineLoader
 {
-    public static async Task<WhisperTranscriber> LoadAsync(AppSettings s, string modelsDir, Action<string> onProgress, CancellationToken ct)
+    /// <param name="prov">モデルの用意に使うもの(検証モードが取得元を差し替える)。省略時は <paramref name="modelsDir"/> の本物。</param>
+    public static async Task<WhisperTranscriber> LoadAsync(AppSettings s, string modelsDir, Action<string> onProgress, CancellationToken ct,
+        ModelProvisioner? prov = null)
     {
         var entry = ModelCatalog.Get(s.Model);
-        var prov = new ModelProvisioner(modelsDir);
+        prov ??= new ModelProvisioner(modelsDir);
         var last = -1;
-        var path = await prov.EnsureAsync(entry, new Progress<(string Phase, double Ratio)>(p =>
+        var path = await prov.EnsureAsync(entry, new InlineProgress<(string Phase, double Ratio)>(p =>
         {
             int pct = (int)(p.Ratio * 100);
             if (pct != last) { last = pct; onProgress($"{p.Phase} {pct}%"); }

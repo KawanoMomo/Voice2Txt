@@ -118,7 +118,7 @@ internal sealed class TrayApp : ApplicationContext
             var sw = Stopwatch.StartNew();
             void Progress(string p)
             {
-                _modelStatus = $"モデル準備中 {p}";
+                _modelStatus = ModelPrepProgress.TrayStatus(p);
                 _ptt.SetModelStatus(false, p);
                 _overlay.BeginInvoke(() => _tray.Text = AppVersion.TrayText(_modelStatus));
             }
