@@ -27,6 +27,9 @@ public class PackagingTests
         // whisper.cpp の CUDA 版(MIT)は同梱してよい
         Assert.DoesNotMatch(dll, "ggml-cuda-whisper.dll");
         Assert.DoesNotMatch(dll, "whisper.dll");
+        // Vulkan: whisper.cpp の Vulkan 版(MIT)は同梱してよく、ローダー(vulkan-1.dll)は利用者の GPU ドライバ側のものを使う
+        Assert.Matches(dll, "vulkan-1.dll");
+        Assert.DoesNotMatch(dll, "ggml-vulkan-whisper.dll");
     }
 
     [Fact]

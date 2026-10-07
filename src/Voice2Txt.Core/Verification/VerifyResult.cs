@@ -14,11 +14,16 @@ public sealed class VerifyResult
     public string? TrayTooltip { get; set; }
     public bool Completed { get; set; }
     public string? Error { get; set; }
+    /// <summary>読めた文字起こしのバックエンド(Cuda / Vulkan / Cpu)。</summary>
     public string? Runtime { get; set; }
+    /// <summary>設定 backend(auto / cuda / vulkan / cpu)。</summary>
+    public string? Backend { get; set; }
+    /// <summary>途中経過を出していたか(設定 showInterim がオンでも、CPU で動くときは出さない)。</summary>
+    public bool? Interim { get; set; }
     /// <summary>読み込んだモデルの名前(台本の settings.model を引いた結果)。</summary>
     public string? Model { get; set; }
     public long? ModelReadyMs { get; set; }
-    /// <summary>CUDA の実行時ライブラリ: ready(runtime フォルダから読めた)か、CPU で動く理由。検証モードは取得しない。</summary>
+    /// <summary>CUDA の実行時ライブラリ: ready(runtime フォルダから読めた)か、CUDA を使えない理由。検証モードは取得しない。</summary>
     public string? CudaRuntime { get; set; }
     /// <summary>モデルの準備の段階の列(段階が変わるたびと、進み具合が 10% の刻みを跨ぐたび。そのときのトレイのツールチップ付き)。</summary>
     public List<ModelPrepRecord> ModelPrep { get; set; } = [];

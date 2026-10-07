@@ -4,6 +4,11 @@
   トークキー(初期値 右 Ctrl)を押している間だけ録音し、離すと文字起こしした文を、押した時点で前面にあったアプリへ貼り付けます。
   音声は PC の外へ送りません。トレイのアイコンを右クリックすると、版・設定・ログオン時の起動を選べます。
 
+GPU / CPU(バックエンド)
+  起動時に CUDA(NVIDIA の GPU)→ Vulkan(AMD・Intel などの GPU 全般。GPU ドライバのものを使います)→ CPU の順に使えるものを選びます。
+  使っているものはトレイのアイコンにマウスを載せると「待機中(モデル …、Vulkan)」のように出ます。
+  設定の backend(auto / cuda / vulkan / cpu)で選べます。CPU では 1 文に十数秒かかり、押している間の途中経過は出しません。
+
 portable.zip の場合
   zip をフォルダごと展開してから、Voice2Txt\Voice2Txt.exe を起動してください(zip の中から直接起動しないでください)。
 
@@ -13,7 +18,7 @@ portable.zip の場合
   - NVIDIA CUDA の実行時ライブラリ(cudart / cuBLAS。NVIDIA の GPU とドライバがある PC だけ)
       取得元 NVIDIA の公式 redist(https://developer.download.nvidia.com/compute/cuda/redist/)。SHA-256 を照合して
       %LOCALAPPDATA%\Voice2Txt\runtime\ に置きます。NVIDIA の CUDA Toolkit EULA に従う NVIDIA の著作物です。
-      取得しない場合は設定の fetchCudaRuntime を false にしてください(CPU で動きます)。
+      取得しない場合は設定の fetchCudaRuntime を false にしてください(Vulkan か CPU で動きます)。
   準備中はトレイとオーバーレイに「モデル準備中」と出ます。ネットに出るのはこの 2 つの取得だけです。
 
 ライセンス

@@ -33,9 +33,9 @@ Copy-Item (Join-Path $root 'THIRD_PARTY_NOTICES.md') (Join-Path $app 'THIRD_PART
 # zip の中のファイル名は ASCII にする(日本語名は展開ツールによって文字化けする)
 Copy-Item (Join-Path $PSScriptRoot 'README-dist.txt') (Join-Path $app 'README.txt')
 
-# 4. 中身の検査: NVIDIA の DLL・モデルの重み・音声が無いこと、exe の版がタグと同じこと
+# 4. 中身の検査: NVIDIA の DLL・Vulkan のローダー(GPU ドライバ側の vulkan-1.dll)・モデルの重み・音声が無いこと、exe の版がタグと同じこと
 $bad = Get-ChildItem $app -Recurse -File | Where-Object {
-  $_.Name -match '^(cudart|cublas|cublasLt|cudnn|nvrtc|nvJitLink|cufft|curand|cusparse|cusolver)\d*_?\d*\.dll$' -or $_.Name -match '\.(bin|gguf|wav|mp3|m4a|flac)$'
+  $_.Name -match '^(cudart|cublas|cublasLt|cudnn|nvrtc|nvJitLink|cufft|curand|cusparse|cusolver|vulkan-)\d*_?\d*\.dll$' -or $_.Name -match '\.(bin|gguf|wav|mp3|m4a|flac)$'
 }
 if ($bad) { throw ("配布物に入れてはならないファイル: " + (($bad | ForEach-Object { $_.FullName.Substring($app.Length + 1) }) -join ', ')) }
 $exe = Join-Path $app 'Voice2Txt.exe'

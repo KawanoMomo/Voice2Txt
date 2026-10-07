@@ -6,7 +6,7 @@ using Whisper.net.LibraryLoader;
 namespace Voice2Txt;
 
 /// <summary>
-/// whisper.cpp(Whisper.net)をプロセス内に取り込む。日本語固定。バックエンドは CUDA を先に試す。
+/// whisper.cpp(Whisper.net)をプロセス内に取り込む。日本語固定。バックエンドは設定 backend の順(auto: CUDA → Vulkan → CPU)に試す。
 /// 語の時刻(DTW)を出せるモデルでは、確定版の文字が無い声の区間を拾い直す(<see cref="Recovery"/>)。
 /// </summary>
 internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposable
@@ -31,9 +31,10 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
     /// DTW を有効にした whisper.cpp は窓を送る途中で返し終えることがある(30 秒前後より長い入力で後ろが黙って消える)ので、
     /// <see cref="Recovery.TranscribeAsync"/> が最後の区切りの終わりから続きを渡し直す。
     /// </summary>
-    public static WhisperTranscriber Load(string modelPath, string? modelName = null, double silenceThreshold = 0.01)
+    public static WhisperTranscriber Load(string modelPath, string? modelName = null, double silenceThreshold = 0.01, string? backend = null)
     {
-        RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Cuda, RuntimeLibrary.Cpu];
+        // バックエンドは設定 backend の順に読めるものを使う(auto: CUDA → Vulkan → CPU)。プロセスで最初に読めたものが使われ続ける
+        RuntimeOptions.RuntimeLibraryOrder = Backends.Order(backend).Select(n => Enum.Parse<RuntimeLibrary>(n)).ToList();
         Recovery.Diag ??= AppLog.Write;
         var heads = AlignmentHeads(modelName);
         var f = heads is { } h
@@ -133,7 +134,7 @@ internal static class EngineLoader
             if (pct != last) { last = pct; onProgress($"{p.Phase} {pct}%"); }
         }), ct);
         onProgress("読み込み");
-        var t = await Task.Run(() => WhisperTranscriber.Load(path, entry.Name, s.SilenceThreshold), ct);
+        var t = await Task.Run(() => WhisperTranscriber.Load(path, entry.Name, s.SilenceThreshold, s.Backend), ct);
         // 暖機: 最初の文字起こしは GPU の初期化(初回は CUDA カーネルの JIT も)で数秒〜十秒かかる。準備中のうちに無音 1 秒で済ませておく
         onProgress("暖機");
         await t.TranscribeAsync(new float[Audio.SampleRate], null, ct);

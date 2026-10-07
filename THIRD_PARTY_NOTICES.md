@@ -10,7 +10,8 @@ Voice2Txt(MIT、`LICENSE`)が同梱・参照する他者の著作物と、その
 | Whisper.net | 1.9.1 | MIT | Copyright (c) 2024 sandrohanea | https://github.com/sandrohanea/whisper.net |
 | Whisper.net.Runtime | 1.9.1 | MIT | Copyright (c) 2024 sandrohanea | 同上(whisper.cpp のネイティブ実行時ライブラリを含む) |
 | Whisper.net.Runtime.Cuda | 1.9.1 | MIT | Copyright (c) 2024 sandrohanea | 同上(whisper.cpp の CUDA 版のネイティブ実行時ライブラリを含む) |
-| whisper.cpp / ggml(Whisper.net.Runtime(.Cuda) に含まれる) | Whisper.net 1.9.1 が同梱する版 | MIT | Copyright (c) 2023-2024 The ggml authors | https://github.com/ggml-org/whisper.cpp |
+| Whisper.net.Runtime.Vulkan | 1.9.1 | MIT | Copyright (c) 2024 sandrohanea | 同上(whisper.cpp の Vulkan 版のネイティブ実行時ライブラリ `ggml-vulkan-whisper.dll` ほかを含む) |
+| whisper.cpp / ggml(Whisper.net.Runtime(.Cuda / .Vulkan) に含まれる) | Whisper.net 1.9.1 が同梱する版 | MIT | Copyright (c) 2023-2024 The ggml authors | https://github.com/ggml-org/whisper.cpp |
 | NAudio.WinMM / NAudio.Core | 3.1.0 | MIT | Copyright (c) Mark Heath | https://github.com/naudio/NAudio |
 | .NET ランタイム / Windows Forms(配布物は self-contained で同梱) | 10.0 | MIT | Copyright (c) .NET Foundation and Contributors | https://github.com/dotnet/runtime / https://github.com/dotnet/winforms |
 
@@ -30,6 +31,11 @@ Voice2Txt(MIT、`LICENSE`)が同梱・参照する他者の著作物と、その
   |---|---|---|
   | `cudart64_13.dll` | https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-13.0.96-archive.zip(CUDA Runtime 13.0.96) | `a2ed875f9997aa24904fb70cc9db3acd9308433cde99bc8e63ec1271c9da31b4` |
   | `cublasLt64_13.dll` / `cublas64_13.dll` | https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-13.1.0.3-archive.zip(cuBLAS 13.1.0.3) | `4ac4847bbe4f7709b244956fcfc32197a2954ee70b155cb67eebd9ee26f7e339` |
+
+## 利用者の PC に既にあるものを使う(配布物にもリポジトリにも含めず、取得もしない)
+
+- **Vulkan のローダー**(`vulkan-1.dll`)と GPU のドライバ — Vulkan のバックエンドは、利用者の PC の GPU ドライバが入れたものを読む。
+  無ければ Vulkan を使わず CPU で動く(設定 `backend`)。
 
 ## 開発・テストだけで使うもの(配布物に入らない)
 

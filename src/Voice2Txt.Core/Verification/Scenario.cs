@@ -14,7 +14,7 @@ public sealed class Scenario
     /// <summary>台本全体の上限(ms)。tools/Verify はこれを超えたら止めて failed にする。</summary>
     public int TimeoutMs { get; set; } = 300_000;
 
-    /// <summary>既定の設定に重ねる値(talkKey / minPressSeconds / silenceThreshold / model / removeFillers / fillers)。</summary>
+    /// <summary>既定の設定に重ねる値(talkKey / minPressSeconds / silenceThreshold / model / backend / removeFillers / fillers)。</summary>
     public AppSettings? Settings { get; set; }
 
     /// <summary>モデルのフォルダ。省略時は %APPDATA%\Voice2Txt\models(全体で共用)。</summary>
@@ -100,7 +100,7 @@ public sealed class Expectation
     /// <summary>離してから届くまでの上限(ms)。</summary>
     public long? MaxReleaseToDeliverMs { get; set; }
 
-    /// <summary>読めていなければならない文字起こしのバックエンド(Cuda / Cpu)。</summary>
+    /// <summary>読めていなければならない文字起こしのバックエンド(Cuda / Vulkan / Cpu)。台本の settings.backend で選ぶ。</summary>
     public string? Runtime { get; set; }
 
     /// <summary>動いた exe の版(v{major}.{minor})。result.json の version と、トレイのツールチップの文言に出ていること。</summary>
