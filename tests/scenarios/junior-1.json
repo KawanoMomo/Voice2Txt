@@ -1,0 +1,25 @@
+{
+  "name": "junior-1",
+  "persona": "junior",
+  "step": 1,
+  "description": "起動直後(モデル読み込み中)にトークキーを押す。「モデル準備中」が出て録音されず、何も届かない。動いている版(VERSION のタグ)が result.json とトレイのツールチップの文言に出る",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "wait", "ms": 500 },
+    { "do": "release" },
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "waitIdle", "timeoutMs": 60000 }
+  ],
+  "expect": {
+    "deliveries": [],
+    "textbox": { "text": "" },
+    "states": ["モデル準備中"],
+    "stateTexts": ["完了まで音声入力は使えません"],
+    "forbiddenStates": ["録音中", "処理中", "貼り付け完了", "退避"],
+    "cancellations": ["ModelNotReady"],
+    "screenshots": ["モデル準備中"],
+    "versionFile": "VERSION"
+  }
+}

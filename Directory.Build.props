@@ -1,0 +1,8 @@
+<Project>
+  <!-- 版はリポジトリ直下の VERSION(releaser がタグと揃える)を正とし、exe の版(ファイルの版・製品の版)に入れる。
+       トレイのツールチップ・メニューと検証モードの result.json は、ここから作った版(v{major}.{minor})を出す。 -->
+  <PropertyGroup>
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+</Project>

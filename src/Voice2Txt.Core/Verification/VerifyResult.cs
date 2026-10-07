@@ -8,6 +8,10 @@ namespace Voice2Txt.Core.Verification;
 public sealed class VerifyResult
 {
     public string Scenario { get; set; } = "";
+    /// <summary>動いた exe の版(タグの形 v{major}.{minor})。</summary>
+    public string? Version { get; set; }
+    /// <summary>常駐時ならトレイアイコンのツールチップに出している文言(最後の状態。版を含む)。</summary>
+    public string? TrayTooltip { get; set; }
     public bool Completed { get; set; }
     public string? Error { get; set; }
     public string? Runtime { get; set; }
@@ -187,6 +191,11 @@ public static class Evaluator
             fails.Add($"警告 [{string.Join(",", r.Warnings)}](期待 [{string.Join(",", ws)}])");
         if (e.Runtime is { } rt && !string.Equals(rt, r.Runtime, StringComparison.OrdinalIgnoreCase))
             fails.Add($"バックエンド {r.Runtime ?? "(読めていない)"}(期待 {rt})");
+        if (e.Version is { } ver)
+        {
+            if (ver != r.Version) fails.Add($"版 {r.Version ?? "(無い)"}(期待 {ver})");
+            if (r.TrayTooltip is null || !r.TrayTooltip.Contains(ver)) fails.Add($"トレイのツールチップ「{r.TrayTooltip}」に版 {ver} が出ていない");
+        }
         if (e.Model is { } m && !string.Equals(m, r.Model, StringComparison.OrdinalIgnoreCase))
             fails.Add($"モデル {r.Model ?? "(読めていない)"}(期待 {m})");
         if (e.MaxReleaseToDeliverMs is { } max)

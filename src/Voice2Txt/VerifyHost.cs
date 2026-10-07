@@ -42,7 +42,7 @@ internal sealed class VerifyHost : ApplicationContext
         _shots = Path.Combine(_out, "shots");
         Directory.CreateDirectory(_shots);
         AppLog.Path = Path.Combine(_out, "verify.log");
-        _result = new VerifyResult { Scenario = _sc.Name };
+        _result = new VerifyResult { Scenario = _sc.Name, Version = AppVersion.Tag(AppVersion.Current), TrayTooltip = AppVersion.TrayText("モデル準備中") };
         _settings = _sc.Settings ?? new AppSettings();
         _talkKey = TalkKeys.Parse(_settings.TalkKey);
         _keys = new TalkKeyFilter((int)_talkKey);
@@ -198,6 +198,7 @@ internal sealed class VerifyHost : ApplicationContext
             _result.ModelReadyMs = _sw.ElapsedMilliseconds;
             _result.Runtime = t.Runtime;
             _result.Model = ModelCatalog.Get(_settings.Model).Name;
+            lock (_result) _result.TrayTooltip = AppVersion.TrayText($"待機中(モデル {_result.Model})"); // 常駐時と同じ文言
             AppLog.Write($"engine-ready model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds}");
             _ptt.SetModelStatus(true);
             _modelReady.TrySetResult();

@@ -52,8 +52,11 @@ internal sealed class TrayApp : ApplicationContext
         var talk = TalkKeys.Parse(settings.TalkKey);
         _overlay = new OverlayForm(TalkKeys.DisplayName(talk), () => _ptt?.InputLevel ?? 0);
         _ = _overlay.Handle; // UI スレッドで作る(クリップボードの Invoke 先)
-        _tray = new NotifyIcon { Icon = TrayIcons.Busy, Visible = true, Text = "Voice2Txt — モデル準備中" };
+        _tray = new NotifyIcon { Icon = TrayIcons.Busy, Visible = true, Text = AppVersion.TrayText("モデル準備中") };
         var menu = new ContextMenuStrip();
+        // 先頭に版(タグ)。実機受け入れで、今動いている版を画面から確かめられるように
+        menu.Items.Add(new ToolStripMenuItem(AppVersion.Label) { Enabled = false });
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("設定ファイルを開く", null, (_, _) => Process.Start(new ProcessStartInfo("notepad.exe", $"\"{settingsPath}\"") { UseShellExecute = true }));
         menu.Items.Add("設定フォルダを開く", null, (_, _) => Process.Start(new ProcessStartInfo(AppSettings.DefaultDirectory) { UseShellExecute = true }));
         // ログオン時の自動起動(初期値オフ)。起動時に設定と登録を一致させ、メニューで切り替える
@@ -111,26 +114,24 @@ internal sealed class TrayApp : ApplicationContext
             {
                 _modelStatus = $"モデル準備中 {p}";
                 _ptt.SetModelStatus(false, p);
-                _overlay.BeginInvoke(() => _tray.Text = Trim($"Voice2Txt — {_modelStatus}"));
+                _overlay.BeginInvoke(() => _tray.Text = AppVersion.TrayText(_modelStatus));
             }, _cts.Token);
             _engine.Set(t);
             _ptt.SetModelStatus(true);
             var model = ModelCatalog.Get(_settings.Model).Name;
             AppLog.Write($"engine-ready model={model} runtime={t.Runtime} ms={sw.ElapsedMilliseconds}");
-            _overlay.BeginInvoke(() => { _tray.Text = Trim($"Voice2Txt — 待機中(モデル {model})"); _tray.Icon = TrayIcons.Idle; });
+            _overlay.BeginInvoke(() => { _tray.Text = AppVersion.TrayText($"待機中(モデル {model})"); _tray.Icon = TrayIcons.Idle; });
         }
         catch (Exception ex)
         {
             AppLog.Write("engine-error " + ex.Message);
             _overlay.BeginInvoke(() =>
             {
-                _tray.Text = "Voice2Txt — モデルを用意できません";
+                _tray.Text = AppVersion.TrayText("モデルを用意できません");
                 _tray.ShowBalloonTip(5000, "Voice2Txt", "モデルを用意できませんでした: " + ex.Message, ToolTipIcon.Error);
             });
         }
     }
-
-    private static string Trim(string s) => s.Length > 63 ? s[..63] : s;
 
     public void NotifyAlreadyRunning() =>
         _overlay.BeginInvoke(() => _tray.ShowBalloonTip(3000, "Voice2Txt", "Voice2Txt は既に起動しています", ToolTipIcon.Info));
