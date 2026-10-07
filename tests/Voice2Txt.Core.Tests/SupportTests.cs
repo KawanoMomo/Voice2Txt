@@ -75,6 +75,33 @@ public class AudioTests
     }
 
     [Fact]
+    public void 無音を詰める_小さい声では声の弱い部分を無音として削らない()
+    {
+        // 小さい声・遠いマイク: 最も大きい所でもしきい値をわずかに超えるだけで、声の弱い部分はしきい値を下回る
+        float[] a = [.. FakeRecorder.Silence(3), .. FakeRecorder.Tone(0.5, 0.02f), .. FakeRecorder.Tone(2, 0.006f), .. FakeRecorder.Tone(0.5, 0.02f), .. FakeRecorder.Silence(3)];
+        Assert.True(Audio.Rms(FakeRecorder.Tone(1, 0.006f)) < Th);
+        var t = Audio.TrimSilence(a, Th);
+        Assert.InRange(t.Length, Sec(3 + 2 * Audio.SpeechPadSeconds - 0.03), Sec(3 + 2 * Audio.SpeechPadSeconds + 0.06));
+    }
+
+    [Fact]
+    public void 無音を詰める_小さい声でも雑音は声として残さない()
+    {
+        var rnd = new Random(2);
+        float[] a = [.. FakeRecorder.Silence(5), .. FakeRecorder.Tone(2, 0.02f), .. FakeRecorder.Silence(8)];
+        for (int i = 0; i < a.Length; i++) a[i] += (float)((rnd.NextDouble() * 2 - 1) * 0.005); // 録音機器の雑音(RMS 約 0.003)
+        Assert.InRange(Audio.TrimSilence(a, Th).Length, Sec(2), Sec(2 + 2 * Audio.SpeechPadSeconds + 0.06));
+    }
+
+    [Fact]
+    public void 声とみなす下限は録音の大きさに合わせ_しきい値を超えない()
+    {
+        Assert.Equal(Th, Audio.VoiceLevel([.. FakeRecorder.Silence(1), .. FakeRecorder.Tone(1, 0.9f)], Th));
+        float[] quiet = [.. FakeRecorder.Silence(1), .. FakeRecorder.Tone(1, 0.02f)];
+        Assert.Equal(Audio.PeakFrameRms(quiet) * Audio.VoiceRelativeLevel, Audio.VoiceLevel(quiet, Th), 6);
+    }
+
+    [Fact]
     public void 無音を詰める_声が無ければそのまま_詰めても1秒を割らない()
     {
         var sil = FakeRecorder.Silence(3);

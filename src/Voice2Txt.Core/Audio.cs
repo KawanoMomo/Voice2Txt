@@ -91,21 +91,23 @@ public static class Audio
     public const double SpeechPadSeconds = 0.4;
 
     /// <summary>
-    /// 復号に渡す前に無音区間を詰める。30 ms 区間の RMS が <paramref name="threshold"/> 以上の区間を声とし、声から
+    /// 復号に渡す前に無音区間を詰める。声の区間(30 ms 区間の RMS が <see cref="VoiceLevel"/> 以上)から
     /// <see cref="SpeechPadSeconds"/> 以内のサンプルだけを残す(先頭・末尾の無音は余白まで削り、発話の間の長い無音は余白 2 つ分に縮める)。
     /// 無音が長いほど Whisper は音声に無い文(「ご視聴ありがとうございました」等)を作るので、長さによらず復号に無音を長く渡さない。
-    /// 声が無ければ元のまま返す(無音の取り消しは呼び出し側が先に判定する)。
+    /// 声が無ければ(最も大きい区間が <paramref name="threshold"/> 未満なら)元のまま返す(無音の取り消しは呼び出し側が先に判定する)。
     /// </summary>
     public static float[] TrimSilence(float[] samples, double threshold, double padSeconds = SpeechPadSeconds, int sampleRate = SampleRate)
     {
         int frame = Math.Max(1, sampleRate * 30 / 1000);
         int pad = (int)(sampleRate * padSeconds);
+        if (PeakFrameRms(samples, sampleRate) < threshold) return samples;
+        double voice = VoiceLevel(samples, threshold, sampleRate);
         var keep = new bool[samples.Length];
         bool any = false;
         for (int i = 0; i < samples.Length; i += frame)
         {
             int end = Math.Min(samples.Length, i + frame);
-            if (Rms(samples.AsSpan(i, end - i)) < threshold) continue;
+            if (Rms(samples.AsSpan(i, end - i)) < voice) continue;
             any = true;
             int a = Math.Max(0, i - pad), b = Math.Min(samples.Length, end + pad);
             for (int j = a; j < b; j++) keep[j] = true;
@@ -122,6 +124,30 @@ public static class Audio
 
     /// <summary>無音を詰めた後に残す最短の長さ(秒)。</summary>
     public const double MinDecodeSeconds = 1.1;
+
+    /// <summary>声とみなす下限の、その録音で最も大きい 30 ms 区間の RMS に対する比(約 -32 dB)。</summary>
+    public const double VoiceRelativeLevel = 0.025;
+
+    /// <summary>声とみなす下限の、その録音の雑音の大きさ(静かな方から 1 割の 30 ms 区間の RMS)に対する倍率。</summary>
+    public const double VoiceOverNoise = 3;
+
+    /// <summary>
+    /// <see cref="TrimSilence"/> が声とみなす 30 ms 区間の RMS の下限。録音の大きさに合わせる: 最も大きい区間の
+    /// <see cref="VoiceRelativeLevel"/> 倍(小さい声・遠いマイクでも、声の弱い部分を無音として削らない)。ただし雑音の
+    /// <see cref="VoiceOverNoise"/> 倍は下回らない(雑音を声として残さない)。どちらも <paramref name="threshold"/> は超えない(普通の大きさの録音の詰め方はほぼ変わらない)。
+    /// </summary>
+    public static double VoiceLevel(float[] samples, double threshold, int sampleRate = SampleRate)
+    {
+        int frame = Math.Max(1, sampleRate * 30 / 1000);
+        var rms = new List<double>(samples.Length / frame + 1);
+        for (int i = 0; i < samples.Length; i += frame)
+            rms.Add(Rms(samples.AsSpan(i, Math.Min(samples.Length, i + frame) - i)));
+        if (rms.Count == 0) return threshold;
+        double peak = rms.Max();
+        rms.Sort();
+        double noise = rms[rms.Count / 10];
+        return Math.Min(threshold, Math.Max(peak * VoiceRelativeLevel, noise * VoiceOverNoise));
+    }
 
     /// <summary>30 ms 区間ごとの RMS の最大値。無音判定に使う。</summary>
     public static double PeakFrameRms(float[] samples, int sampleRate = SampleRate)
