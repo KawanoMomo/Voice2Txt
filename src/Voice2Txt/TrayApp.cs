@@ -50,7 +50,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         _settings = settings;
         var talk = TalkKeys.Parse(settings.TalkKey);
-        _overlay = new OverlayForm(TalkKeys.DisplayName(talk));
+        _overlay = new OverlayForm(TalkKeys.DisplayName(talk), () => _ptt?.InputLevel ?? 0);
         _ = _overlay.Handle; // UI スレッドで作る(クリップボードの Invoke 先)
         _tray = new NotifyIcon { Icon = TrayIcons.Busy, Visible = true, Text = "Voice2Txt — モデル準備中" };
         var menu = new ContextMenuStrip();

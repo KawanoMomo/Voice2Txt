@@ -53,7 +53,7 @@ internal sealed class VerifyHost : ApplicationContext
 
         _textForm = new VerifyTextForm();
         _textForm.Show();
-        _overlay = new OverlayForm(TalkKeys.DisplayName(_talkKey));
+        _overlay = new OverlayForm(TalkKeys.DisplayName(_talkKey), () => _ptt?.InputLevel ?? 0);
         _ = _overlay.Handle;
         _fg = new VirtualForeground(_textForm.Handle);
 
@@ -83,6 +83,21 @@ internal sealed class VerifyHost : ApplicationContext
         rec.Foreground = ProbeForeground();
         lock (_result) _result.States.Add(rec);
         AppLog.Write($"state {v.Label} capture={rec.Capture}");
+    }
+
+    /// <summary>台本の shot: 今のオーバーレイを撮り、そのとき描いた音量バーの値と一緒に結果に残す(UI スレッド)。</summary>
+    private void Shot(string? name)
+    {
+        name ??= "shot";
+        var v = _overlay.View;
+        double meter = _overlay.SampleMeter();
+        _overlay.Refresh();
+        Thread.Sleep(40);
+        var file = $"{++_shotNo:00}-{Safe(v.Label)}-{Safe(name)}.png";
+        var rec = new ShotRecord { Name = name, AtMs = _sw.ElapsedMilliseconds, State = v.Label, Meter = Math.Round(meter, 3), Screenshot = "shots/" + file };
+        rec.Capture = _overlay.SaveScreenshot(Path.Combine(_shots, file));
+        lock (_result) _result.Shots.Add(rec);
+        AppLog.Write($"shot {name} state={v.Label} meter={rec.Meter} capture={rec.Capture}");
     }
 
     /// <summary>台本のキー 1 つをトークキーの判定に通す(キーボードフックと同じ)。名前の省略はトークキー。</summary>
@@ -217,6 +232,9 @@ internal sealed class VerifyHost : ApplicationContext
                 case "wait":
                     await Task.Delay(a.Ms ?? 0);
                     break;
+                case "shot":
+                    _overlay.Invoke(() => Shot(a.Name));
+                    break;
                 case "waitIdle":
                     if (!await _ptt.WaitIdleAsync(TimeSpan.FromMilliseconds(a.TimeoutMs ?? 300_000)))
                         throw new TimeoutException("処理待ちが 0 にならない");
@@ -276,6 +294,17 @@ internal sealed class VerifyRecorder : IRecorder
     {
         private Stopwatch? _since;
         public void MarkStarted() => _since = Stopwatch.StartNew();
+
+        /// <summary>流し込んでいる音声の、今の位置の直前 0.1 秒の RMS(流し終えた後は 0)。</summary>
+        public double InputRms
+        {
+            get
+            {
+                if (_since is null) return 0;
+                long n = _since.ElapsedMilliseconds * Audio.SampleRate / 1000;
+                return n >= audio.Length ? 0 : Audio.TailRms(audio, (int)n);
+            }
+        }
 
         public Task<float[]> StopAsync()
         {

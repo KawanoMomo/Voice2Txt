@@ -46,7 +46,8 @@ public sealed class Scenario
 /// 台本の 1 手。do は次のどれか:
 /// waitModel(モデルの用意を待つ)/ press(キー key を押す。省略時は設定のトークキー。audio に音声ファイル)/ holdUntilAudioEnd(流し終わるまで押し続ける)/
 /// release(キー key を離す。省略時はトークキー)/ key(キー key を押して離す。省略時 C)/ focus(前面を window = "textbox" か "other" に切り替える)/
-/// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)
+/// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)/
+/// shot(今のオーバーレイを name の名で撮り、そのときの状態と音量バーの値を結果の shots に残す)
 /// </summary>
 public sealed class ScenarioAction
 {
@@ -57,6 +58,8 @@ public sealed class ScenarioAction
     /// <summary>キーの名前(System.Windows.Forms.Keys の名前。例 RControlKey, RMenu, C)。キーはトークキーの判定に通す。</summary>
     public string? Key { get; set; }
     public string? Window { get; set; }
+    /// <summary>shot の名前(期待の shots と結び付ける)。</summary>
+    public string? Name { get; set; }
 }
 
 public sealed class Expectation
@@ -99,6 +102,19 @@ public sealed class Expectation
 
     /// <summary>スクリーンショットが撮れていなければならない状態。</summary>
     public List<string>? Screenshots { get; set; }
+
+    /// <summary>台本の shot で撮ったもの(名前で引く。状態と音量バーの値の範囲)。</summary>
+    public List<ShotExpectation>? Shots { get; set; }
+}
+
+public sealed class ShotExpectation
+{
+    public string Name { get; set; } = "";
+    /// <summary>撮ったときの状態(省略可)。</summary>
+    public string? State { get; set; }
+    /// <summary>音量バーの値(0〜1)の下限・上限(省略可)。</summary>
+    public double? MinMeter { get; set; }
+    public double? MaxMeter { get; set; }
 }
 
 public sealed class TextExpectation

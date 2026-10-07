@@ -14,6 +14,7 @@ internal sealed class WaveInRecorder : IRecorder
         private readonly List<float> _buf = [];
         private readonly TaskCompletionSource<float[]> _done = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private bool _started;
+        private double _rms;
 
         public Rec(Action onStarted)
         {
@@ -23,6 +24,7 @@ internal sealed class WaveInRecorder : IRecorder
                 {
                     if (!_started) { _started = true; onStarted(); }
                     for (int i = 0; i + 1 < e.BytesRecorded; i += 2) _buf.Add(BitConverter.ToInt16(e.Buffer, i) / 32768f);
+                    _rms = Audio.TailRms(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_buf), _buf.Count);
                 }
             };
             _w.RecordingStopped += (_, e) =>
@@ -35,6 +37,7 @@ internal sealed class WaveInRecorder : IRecorder
 
         public Task<float[]> StopAsync() { _w.StopRecording(); return _done.Task; }
         public void Abort() { try { _w.StopRecording(); } catch { } }
+        public double InputRms { get { lock (_buf) return _rms; } }
     }
 }
 
