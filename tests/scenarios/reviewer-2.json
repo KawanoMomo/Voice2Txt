@@ -1,0 +1,36 @@
+{
+  "name": "reviewer-2",
+  "persona": "reviewer",
+  "step": 2,
+  "description": "オーバーレイの配置を MOC と突き合わせる: 押している間の途中経過が 1 行のときと、長い発話で上限(3 行)まで伸びたときのスクショで、常に出る案内の行(録音中の赤い点・「右 Ctrl を離すと入力」)は画面上の同じ位置(オーバーレイの一番下)にあり、途中経過はその上に積まれる",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "test-results/fixtures/ja-one-sentence.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 300 },
+    { "do": "shot", "name": "途中経過 1 行" },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "test-results/fixtures/utt-21.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 300 },
+    { "do": "shot", "name": "途中経過 3 行" },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 }
+  ],
+  "expect": {
+    "deliveries": [
+      { "to": "textbox", "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 },
+      { "to": "textbox" }
+    ],
+    "states": ["録音中", "処理中", "貼り付け完了", "録音中", "処理中", "貼り付け完了"],
+    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
+    "cancellations": [],
+    "shots": [
+      { "name": "途中経過 1 行", "state": "録音中", "minInterimChars": 8, "maxInterimLines": 1 },
+      { "name": "途中経過 3 行", "state": "録音中", "minInterimLines": 3, "sameHintRowAs": "途中経過 1 行" }
+    ]
+  }
+}
