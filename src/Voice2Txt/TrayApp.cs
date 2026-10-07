@@ -203,6 +203,9 @@ internal sealed class DeferredTranscriber : ITranscriber, IDisposable
     public Task<string> TranscribeAsync(float[] samples16k, IProgress<string>? partial, CancellationToken ct) =>
         _inner?.TranscribeAsync(samples16k, partial, ct) ?? throw new InvalidOperationException("モデルが未準備");
 
+    public Task<string> TranscribeInterimAsync(float[] samples16k, CancellationToken ct) =>
+        _inner?.TranscribeInterimAsync(samples16k, ct) ?? throw new InvalidOperationException("モデルが未準備");
+
     public void Dispose() => _inner?.Dispose();
 }
 

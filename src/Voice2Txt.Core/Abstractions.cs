@@ -44,7 +44,14 @@ public interface IPasteSender
 /// <summary>文字起こしエンジンの境界。途中経過は、押下中にそれまでの音声の写しを同じエンジンで文字起こしし直して作る(<paramref name="partial"/> は使わない)。</summary>
 public interface ITranscriber
 {
+    /// <summary>確定版の文字起こし。</summary>
     Task<string> TranscribeAsync(float[] samples16k, IProgress<string>? partial, CancellationToken ct);
+
+    /// <summary>
+    /// 途中経過の文字起こし(押下中の写し)。エンジンはついでに、確定版が要りそうな処理(拾い直し)を先に済ませてよい
+    /// (離してから届くまでに回さないため)。既定は確定版と同じ。
+    /// </summary>
+    Task<string> TranscribeInterimAsync(float[] samples16k, CancellationToken ct) => TranscribeAsync(samples16k, null, ct);
 }
 
 public interface IClock

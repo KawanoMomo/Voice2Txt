@@ -44,6 +44,21 @@ public class InterimTests
     }
 
     [Fact]
+    public async Task 途中経過は途中経過用の入口で_確定版は確定版の入口で文字起こしする()
+    {
+        // エンジンは途中経過のついでに、確定版が要りそうな拾い直しを先に済ませる(確定版の入口では先回りしない)
+        await using var r = MakeRig();
+        r.Ptt.OnTalkKeyDown();
+        Assert.True(await Until(() => r.Ptt.CurrentView.Interim == "途中"));
+        r.Clock.NowMs += 1000;
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.True(r.Engine.InterimCalls >= 1);
+        Assert.Equal(r.Engine.InterimCalls + 1, r.Engine.Calls);
+        Assert.Equal(Full.Length, r.Engine.FinalLengths.Single());
+    }
+
+    [Fact]
     public async Task 離した後の処理中は最後の途中経過を出し続け_結末が出たら消す()
     {
         await using var r = MakeRig();

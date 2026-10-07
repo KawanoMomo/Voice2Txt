@@ -332,7 +332,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 if (samples.Length < Audio.SampleRate / 2 || !Audio.HasVoice(samples, _o.SilenceThreshold)) continue;
                 samples = Audio.TrimSilence(samples, _o.SilenceThreshold);
                 string text;
-                try { text = (await _d.Transcriber.TranscribeAsync(samples, null, ct)).Trim(); }
+                try { text = (await _d.Transcriber.TranscribeInterimAsync(samples, ct)).Trim(); }
                 catch (OperationCanceledException) { return; }
                 catch (Exception) { continue; } // 途中経過は出せなくても録音と確定版には響かせない
                 // 確定版と同じく言い淀みを除いて見せる(押下中に「ええ」が見えて、届いた確定版から消えている、という食い違いを出さない)
