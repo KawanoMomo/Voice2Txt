@@ -42,7 +42,11 @@ public sealed class AppSettings
     };
 
     public static string DefaultDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Voice2Txt");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppVersion.ProductName);
+
+    /// <summary>この PC だけの置き場(%LOCALAPPDATA%\Voice2Txt)。</summary>
+    public static string LocalDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppVersion.ProductName);
 
     /// <summary>読み込む。無ければ初期値で作って保存する。壊れていれば初期値を返し、壊れたファイルは .bad に残す。</summary>
     public static AppSettings LoadOrCreate(string path)

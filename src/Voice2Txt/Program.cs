@@ -54,10 +54,20 @@ internal static class Program
             if (EventWaitHandle.TryOpenExisting(ActivateEvent, out var ev)) { ev.Set(); ev.Dispose(); }
             return 0;
         }
+        // 旧名の版が動いていれば、二つがトークキーを奪い合わないよう起動しない
+        if (Mutex.TryOpenExisting(LegacyName.SingleInstanceMutex, out var legacyRunning))
+        {
+            legacyRunning.Dispose();
+            MessageBox.Show($"旧名の版({LegacyName.Name})が動いています。トレイから終了してから {AppVersion.ProductName} を起動してください。",
+                AppVersion.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return 0;
+        }
+        var migration = MigrateLegacy();
         var settingsPath = Path.Combine(AppSettings.DefaultDirectory, "settings.json");
         var settings = AppSettings.LoadOrCreate(settingsPath);
         AppLog.Path = Path.Combine(AppSettings.DefaultDirectory, "logs", "app.log");
         AppLog.Write($"start version={AppVersion.Tag(AppVersion.Current)}");
+        if (migration is not null) AppLog.Write(migration);
         var app = new TrayApp(settings, settingsPath);
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEvent);
         var wait = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => app.NotifyAlreadyRunning(), null, -1, false);
@@ -74,6 +84,28 @@ internal static class Program
             catch (Exception ex) { AppLog.Write("restart-error " + ex.Message); }
         }
         return 0;
+    }
+
+    /// <summary>
+    /// 旧名の置き場(%APPDATA% と %LOCALAPPDATA% の旧名フォルダ: 設定・モデル・ログ・CUDA の実行時ライブラリ)を新しい名前の置き場へ移し、
+    /// 旧名のログオン時の自動起動を外す(設定 autoStart がオンなら TrayApp が新しい名前で登録し直す)。何かしたらログの 1 行を返す。
+    /// </summary>
+    private static string? MigrateLegacy()
+    {
+        try
+        {
+            var roaming = LegacyName.MigrateFolder(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), LegacyName.Name), AppSettings.DefaultDirectory);
+            var local = LegacyName.MigrateFolder(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), LegacyName.Name), AppSettings.LocalDirectory);
+            bool run = LegacyName.RemoveAutoStart(new RunKeyAutoStart(LegacyName.Name));
+            if (!roaming.Any && !local.Any && !run) return null;
+            return $"legacy-migrated roaming=({roaming}) local=({local}) autostart-removed={run}";
+        }
+        catch (Exception ex)
+        {
+            return "legacy-migrate-error " + ex.Message;
+        }
     }
 
     /// <summary>設定画面で保存した後に「今すぐ再起動」を選んだ。終了後に自分を起動し直す。</summary>

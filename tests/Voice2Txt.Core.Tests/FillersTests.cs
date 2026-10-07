@@ -72,7 +72,7 @@ public class FillersTests
     [Fact]
     public void 設定ファイルに無ければ既定_書けば読める()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "ffv2t-fillers-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Combine(Path.GetTempPath(), "v2t-fillers-" + Guid.NewGuid().ToString("N"));
         try
         {
             var path = Path.Combine(dir, "settings.json");
