@@ -17,10 +17,14 @@ internal sealed class OverlayForm : Form
     private readonly System.Windows.Forms.Timer _hide = new();
     private OverlayView _view = OverlayView.Hidden;
     private int _tick;
+    private readonly Func<double> _inputLevel;
+    private double _meter;
 
-    public OverlayForm(string talkKeyName)
+    /// <param name="inputLevel">録音中の音量バーの値(0〜1)を返す。描画のたびに呼ぶ(UI スレッド)。</param>
+    public OverlayForm(string talkKeyName, Func<double>? inputLevel = null)
     {
         _talkKeyName = talkKeyName;
+        _inputLevel = inputLevel ?? (() => 0);
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
@@ -29,7 +33,7 @@ internal sealed class OverlayForm : Form
         Opacity = 0.92;
         DoubleBuffered = true;
         Font = new Font("Yu Gothic UI", 10f);
-        _anim.Tick += (_, _) => { _tick++; Invalidate(); };
+        _anim.Tick += (_, _) => { _tick++; SampleMeter(); Invalidate(); };
         _hide.Tick += (_, _) => { _hide.Stop(); HideOverlay(); };
     }
 
@@ -56,8 +60,19 @@ internal sealed class OverlayForm : Form
 
     public OverlayView View => _view;
 
+    /// <summary>音量バーに今描いている値(0〜1)。</summary>
+    public double MeterLevel => _meter;
+
+    /// <summary>録れている音の大きさを取り込み、音量バーの値を更新して返す(UI スレッド)。</summary>
+    public double SampleMeter()
+    {
+        double target = _view.State is OverlayState.Recording or OverlayState.ProcessingAndRecording ? _inputLevel() : 0;
+        return _meter = InputMeter.Follow(_meter, target);
+    }
+
     public void Apply(OverlayView v)
     {
+        if (v.State is not (OverlayState.Recording or OverlayState.ProcessingAndRecording)) _meter = 0;
         _view = v;
         _hide.Stop();
         if (v.State == OverlayState.Hidden) { HideOverlay(); return; }
@@ -146,12 +161,11 @@ internal sealed class OverlayForm : Form
             switch (p.Kind)
             {
                 case OverlayPartKind.Meter:
+                    // 録れている音の大きさに連動(無音なら低く揃って止まる)
+                    var bars = InputMeter.BarHeights(_meter, _tick);
                     using (var b = new SolidBrush(Color.White))
-                        for (int i = 0; i < 5; i++)
-                        {
-                            int hgt = 3 + (int)(11 * Math.Abs(Math.Sin(_tick * 0.6 + i * 0.9)));
-                            g.FillRectangle(b, x + i * 5, cy - hgt / 2, 3, hgt);
-                        }
+                        for (int i = 0; i < bars.Length; i++)
+                            g.FillRectangle(b, x + i * 5, cy - bars[i] / 2, 3, bars[i]);
                     break;
                 case OverlayPartKind.Key or OverlayPartKind.Badge:
                     int th = TextRenderer.MeasureText(p.Text, _small, Size.Empty, Flags).Height, bh = th + 2;

@@ -2,12 +2,14 @@
   "name": "junior-3",
   "persona": "junior",
   "step": 3,
-  "description": "1 文をトークキーを押している間に流し、離す。オーバーレイが 準備中 → 録音中 → 処理中 → 貼り付け完了 と変わり、検証用のテキスト欄に確定版だけが届く",
+  "description": "1 文をトークキーを押している間に流し、離す。オーバーレイが 準備中 → 録音中 → 処理中 → 貼り付け完了 と変わり、話している間は録音中の音量バーが高く振れ、検証用のテキスト欄に確定版だけが届く",
   "timeoutMs": 600000,
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
     { "do": "focus", "window": "textbox" },
     { "do": "press", "audio": "tests/fixtures/audio/ja-one-sentence.wav" },
+    { "do": "wait", "ms": 1000 },
+    { "do": "shot", "name": "発話中" },
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 200 },
     { "do": "release" },
@@ -23,6 +25,7 @@
     "cancellations": [],
     "runtime": "Cuda",
     "maxReleaseToDeliverMs": 3000,
-    "screenshots": ["準備中", "録音中", "処理中", "貼り付け完了"]
+    "screenshots": ["準備中", "録音中", "処理中", "貼り付け完了"],
+    "shots": [{ "name": "発話中", "state": "録音中", "minMeter": 0.5 }]
   }
 }

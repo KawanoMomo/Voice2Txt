@@ -67,6 +67,26 @@ public static class Audio
         return dst;
     }
 
+    /// <summary>音量バーが見る区間(0.1 秒)のサンプル数。</summary>
+    public const int MeterWindow = SampleRate / 10;
+
+    /// <summary>区間全体の RMS(空なら 0)。</summary>
+    public static double Rms(ReadOnlySpan<float> samples)
+    {
+        if (samples.IsEmpty) return 0;
+        double acc = 0;
+        foreach (var v in samples) acc += v * v;
+        return Math.Sqrt(acc / samples.Length);
+    }
+
+    /// <summary><paramref name="end"/> の直前 <see cref="MeterWindow"/> サンプルの RMS(録音中の音量バーの値の元)。</summary>
+    public static double TailRms(ReadOnlySpan<float> samples, int end)
+    {
+        end = Math.Clamp(end, 0, samples.Length);
+        int start = Math.Max(0, end - MeterWindow);
+        return Rms(samples[start..end]);
+    }
+
     /// <summary>30 ms 区間ごとの RMS の最大値。無音判定に使う。</summary>
     public static double PeakFrameRms(float[] samples, int sampleRate = SampleRate)
     {

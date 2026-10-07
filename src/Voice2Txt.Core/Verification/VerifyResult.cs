@@ -17,6 +17,8 @@ public sealed class VerifyResult
     public List<DeliveryRecord> Deliveries { get; set; } = [];
     public List<CancelRecord> Cancellations { get; set; } = [];
     public List<StateRecord> States { get; set; } = [];
+    /// <summary>台本の shot で撮ったもの(撮った順)。</summary>
+    public List<ShotRecord> Shots { get; set; } = [];
     public string Textbox { get; set; } = "";
     public string? Clipboard { get; set; }
 
@@ -69,6 +71,18 @@ public sealed class StateRecord
 
     /// <summary>この状態を出した直後の本物の前面ウィンドウ: overlay / textbox / other。</summary>
     public string? Foreground { get; set; }
+}
+
+/// <summary>台本の shot で撮ったオーバーレイ。</summary>
+public sealed class ShotRecord
+{
+    public string Name { get; set; } = "";
+    public long AtMs { get; set; }
+    public string State { get; set; } = "";
+    /// <summary>撮ったときに音量バーへ描いていた値(0〜1)。</summary>
+    public double Meter { get; set; }
+    public string? Screenshot { get; set; }
+    public string? Capture { get; set; }
 }
 
 public static class TextSimilarity
@@ -175,6 +189,19 @@ public static class Evaluator
                 var rec = r.States.FirstOrDefault(x => x.State == s && x.Screenshot is not null);
                 if (rec is null || (screenshotExists is not null && !screenshotExists(rec.Screenshot!)))
                     fails.Add($"状態「{s}」のスクリーンショットが無い");
+            }
+        if (e.Shots is { } xs)
+            foreach (var x in xs)
+            {
+                var got = r.Shots.FirstOrDefault(s => s.Name == x.Name);
+                if (got is null || got.Screenshot is null || (screenshotExists is not null && !screenshotExists(got.Screenshot)))
+                {
+                    fails.Add($"shot「{x.Name}」のスクリーンショットが無い");
+                    continue;
+                }
+                if (x.State is not null && x.State != got.State) fails.Add($"shot「{x.Name}」の状態 {got.State}(期待 {x.State})");
+                if (x.MinMeter is { } lo && got.Meter < lo) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(下限 {lo:0.00})");
+                if (x.MaxMeter is { } hi && got.Meter > hi) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(上限 {hi:0.00})");
             }
         return fails;
     }

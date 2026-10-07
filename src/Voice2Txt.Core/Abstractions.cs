@@ -16,6 +16,9 @@ public interface IRecording
 
     /// <summary>録音を捨てる(取り消し)。</summary>
     void Abort();
+
+    /// <summary>直近(<see cref="Audio.MeterWindow"/> サンプル)に録れた音の大きさ(RMS、0〜1)。録音中の音量バーに使う。音が届く前・届き終えた後は 0。</summary>
+    double InputRms { get; }
 }
 
 /// <summary>前面ウィンドウ。判定はウィンドウハンドル単位。</summary>

@@ -60,6 +60,17 @@ public sealed class PushToTalkController : IAsyncDisposable
 
     public OverlayView CurrentView { get { lock (_gate) return _last; } }
 
+    /// <summary>録音中の音量バーの値(0〜1、<see cref="InputMeter.Level"/>)。押していない・まだ音が届いていないときは 0。</summary>
+    public double InputLevel
+    {
+        get
+        {
+            IRecording? rec;
+            lock (_gate) rec = _held && _started ? _rec : null;
+            return rec is null ? 0 : InputMeter.Level(rec.InputRms);
+        }
+    }
+
     /// <summary>モデルの準備状況。準備中にトークキーが押されたら「モデル準備中」を出し、録音しない。</summary>
     public void SetModelStatus(bool ready, string? detail = null)
     {
