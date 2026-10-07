@@ -50,7 +50,7 @@ public class RecoveryTests
     [Fact]
     public async Task 全部の声の区間に語があれば拾い直さない()
     {
-        var all = Seg((0.4, "今日"), (1.0, "の会議では、"), (2.5, "The"), (3.3, " report."), (5.0, "という"), (6.5, "連絡。"));
+        var all = Seg((0.4, "今日"), (1.0, "の会議では、"), (2.5, "The"), (3.3, " report."), (5.0, "という"), (5.8, "緊急の"), (6.5, "連絡。"));
         var d = new FakeDecoder { Main = _ => [all], Span = ("余計な文", 0) };
         var r = await Recovery.TranscribeAsync(Mixed, 0.01, d, default);
         Assert.Equal(all.Text, r.Text);
@@ -124,11 +124,11 @@ public class RecoveryTests
         // 72 秒: 2 秒話して 1 秒黙るを繰り返す(区間は 24 個)
         var parts = Enumerable.Range(0, 24).Select(i => (i * 3.0, i * 3.0 + 2)).ToArray();
         var s = Voice(72, parts);
-        // 偽物の復号は、渡された音声の先頭 20 秒に終わる声の区間ごとに 1 区切り(語 1 つ、時刻は区間の中ほど)を返して止まる
+        // 偽物の復号は、渡された音声の先頭 20 秒に終わる声の区間ごとに 1 区切り(文字は「語」1 つ、語の時刻は区間の中に 0.4 秒おき)を返して止まる
         var d = new FakeDecoder
         {
             Main = slice => Recovery.VoicedSpans(slice, 0.01).Where(sp => sp.End <= 20 * Rate)
-                .Select(sp => new DecodedSegment("語", [new TimedToken((sp.Start + sp.End) / 2.0 / Rate, "語")], (double)sp.End / Rate)).ToList(),
+                .Select(sp => new DecodedSegment("語", Enumerable.Range(0, 5).Select(k => new TimedToken((double)sp.Start / Rate + 0.2 + 0.4 * k, "語")).ToList(), (double)sp.End / Rate)).ToList(),
             Span = ("余計な文", 0),
         };
         var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
@@ -217,7 +217,7 @@ public class RecoveryTests
         await Recovery.TranscribeAsync(Mixed[..(int)(4.2 * Rate)], 0.01, d, default, new SpanCache(), prefetch: true);
         Assert.Empty(d.SpanCalls);
         // 日本語に読めた区間
-        d.Main = _ => [Seg((0.4, "来週"), (2.5, "会議"), (3.5, "します"), (5.3, "と英語で"))];
+        d.Main = _ => [Seg((0.4, "来週"), (1.0, "の出張で"), (2.5, "会議"), (3.5, "します"), (5.3, "と英語で"))];
         await Recovery.TranscribeAsync(Mixed, 0.01, d, default, new SpanCache(), prefetch: true);
         Assert.Empty(d.SpanCalls);
         // 確定版(prefetch なし)では先に拾い直さない
@@ -234,6 +234,88 @@ public class RecoveryTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Recovery.TranscribeAsync(Mixed, 0.01, d, cts.Token));
         Assert.Empty(d.SpanCalls);
     }
+
+    // 記号を読み上げる発話: 声は 0.2〜3.9 秒と 4.4〜6.1 秒(間の無音は短く、区間はどちらも語を持つ)。
+    // 確定版の復号は「レポート、アンダーバー、最終、ドット、ピーディーエフ」を「report.pdf」にまとめ、port(1.66 秒)と p(5.36 秒)の間の語を飛ばした
+    private static readonly float[] Symbol = Voice(6.6, (0.2, 3.9), (4.4, 6.1));
+    private static readonly DecodedSegment Collapsed = Seg((-1, "[_BEG_]"), (0.26, "ファイル"), (0.6, "名"), (0.94, "は"), (1.2, "、"), (1.4, "re"), (1.66, "port"),
+        (2.46, "."), (5.36, "p"), (5.86, "df"), (6.16, " です"), (6.44, "。"));
+
+    [Fact]
+    public async Task 声の区間の中で語の時刻が長く空いた所を拾い直して_後ろの語の前に差し込む()
+    {
+        var d = new FakeDecoder { Main = _ => [Collapsed], Span = ("underbar最終.p", 0) };
+        var r = await Recovery.TranscribeAsync(Symbol, 0.01, d, default);
+        Assert.Equal("ファイル名は、report.underbar最終.pdf です。", r.Text); // 切り出しに付いてきた後ろの語の「p」は重ねない
+        Assert.Equal(1, r.Recovered);
+        Assert.Equal(1, r.Holes);
+        var cut = Assert.Single(d.SpanCalls);
+        Assert.InRange(cut.Length / (double)Rate, 5.36 - 1.66 - 0.01, 5.36 - 1.66 + 0.01); // 前後の語の時刻の間だけを切り出す
+    }
+
+    [Theory]
+    [InlineData(" Two.")] // 雑音を読んだ(日本語の文字が無い)
+    [InlineData("Ому")]
+    [InlineData("report")] // 確定版に既にある
+    [InlineData("p")] // 重なりを落とすと何も残らない
+    public async Task 語の穴から拾い直した結果が日本語の文字を持たないか重複なら差し込まない(string got)
+    {
+        var d = new FakeDecoder { Main = _ => [Collapsed], Span = (got, 0) };
+        var r = await Recovery.TranscribeAsync(Symbol, 0.01, d, default);
+        Assert.Equal(Collapsed.Text, r.Text);
+        Assert.Equal(0, r.Recovered);
+    }
+
+    [Fact]
+    public async Task 語の間の声が短ければ穴とみなさない()
+    {
+        // ゆっくり読んだ数字: 「25」(5.8 秒)の後ろの「日」まで約 1 秒の声
+        var s = Voice(8, (0.2, 7.8));
+        var d = new FakeDecoder { Main = _ => [Seg((0.5, "締め日は"), (1.4, "毎月"), (5.8, "25"), (6.84, "日"), (7.5, "です。"))], Span = ("15日", 0) };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Single(d.SpanCalls); // 「毎月」(1.4)〜「25」(5.8)の 4.4 秒だけが穴
+        d.SpanCalls.Clear();
+        d.Main = _ => [Seg((0.5, "締め日は"), (1.5, "毎月"), (2.5, "の"), (3.5, "末"), (4.6, "日"), (5.8, "25"), (6.84, "日"), (7.5, "です。"))];
+        r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Empty(d.SpanCalls);
+        Assert.Equal(0, r.Recovered);
+    }
+
+    [Fact]
+    public async Task 語の無い声の区間を含む穴は区間の拾い直しに任せる()
+    {
+        // 英文の区間(2.2〜4.0 秒)は語が無く、前後の語「について」(1.4)と「と」(5.0)の間は 1.8 秒の声: 同じ英文を 2 回差し込まない
+        var d = new FakeDecoder { Main = _ => [Skipped], Span = (" Please confirm the hotel booking.", 0.01) };
+        var r = await Recovery.TranscribeAsync(Mixed, 0.01, d, default);
+        Assert.Equal("来週の出張について、Please confirm the hotel booking.と英語で書かれたメール。", r.Text);
+        Assert.Single(d.SpanCalls);
+        Assert.Equal(0, r.Holes);
+    }
+
+    [Fact]
+    public async Task 途中経過で拾い直した語の穴は_確定版で同じ音なら復号し直さない()
+    {
+        var cache = new SpanCache();
+        var d = new FakeDecoder { Main = _ => [Collapsed], Span = ("underbar最終.p", 0) };
+        // 写しの終わりが後ろの語「p」(5.36 秒)から 0.5 秒経っていない: まだ拾い直さない
+        await Recovery.TranscribeAsync(Symbol[..(int)(5.6 * Rate)], 0.01, d, default, cache, prefetch: true);
+        Assert.Empty(d.SpanCalls);
+        var interim = await Recovery.TranscribeAsync(Symbol[..(int)(6.0 * Rate)], 0.01, d, default, cache, prefetch: true);
+        Assert.Equal(1, interim.Holes);
+        Assert.Single(d.SpanCalls);
+        var final = await Recovery.TranscribeAsync(Symbol, 0.01, d, default, cache);
+        Assert.Equal("ファイル名は、report.underbar最終.pdf です。", final.Text);
+        Assert.Equal(1, final.Reused);
+        Assert.Single(d.SpanCalls); // 離してから届くまでに 2 回目の復号を足さない
+    }
+
+    [Theory]
+    [InlineData("report.pdf", 7, "underbar最終.p", "underbar最終.")]
+    [InlineData("reportpdf", 6, "port_最終", "_最終")]
+    [InlineData("report.pdf", 7, "最終", "最終")]
+    [InlineData("report.pdf", 7, "PDF", "")]
+    public void 差し込む文字列の前後の語と重なる所を落とす(string text, int at, string got, string expected) =>
+        Assert.Equal(expected, Recovery.TrimOverlap(text, at, got));
 
     [Fact]
     public void 台本の_contains_に無い語を失敗にする()

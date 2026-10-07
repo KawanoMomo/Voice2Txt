@@ -73,7 +73,7 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
                 return sb.ToString().Trim();
             }
             var r = await Recovery.TranscribeAsync(samples16k, _silenceThreshold, this, ct, _spans, prefetch);
-            if (r.Recovered > 0) AppLog.Write($"recovered spans={r.Recovered} reused={r.Reused}"); // 本文は書かない
+            if (r.Recovered > 0) AppLog.Write($"recovered spans={r.Recovered} reused={r.Reused} holes={r.Holes}"); // 本文は書かない
             return r.Text;
         }
         finally { _one.Release(); }
