@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Voice2Txt.Core;
 
-/// <summary>設定(%APPDATA%\Voice2Txt\settings.json)。基盤の最小限: トークキーとモデル。</summary>
+/// <summary>設定(%APPDATA%\Voice2Txt\settings.json)。基盤の最小限: トークキーとモデル、言い淀みの除去。</summary>
 public sealed class AppSettings
 {
     /// <summary>トークキー。System.Windows.Forms.Keys の名前(例: RControlKey, RMenu)。</summary>
@@ -20,6 +20,12 @@ public sealed class AppSettings
 
     /// <summary>ログオン時の自動起動(初期値オフ)。</summary>
     public bool AutoStart { get; set; }
+
+    /// <summary>確定版から言い淀み(<see cref="Fillers"/>)を取り除いてから届ける(初期値オン)。false で文字起こしのまま届ける。</summary>
+    public bool RemoveFillers { get; set; } = true;
+
+    /// <summary>取り除く言い淀みの語(かな。カタカナで書かれたものも同じ語として扱う)。2 文字の語は前後が区切りのときだけ取り除く。</summary>
+    public List<string> Fillers { get; set; } = [.. Core.Fillers.DefaultWords];
 
     public static readonly JsonSerializerOptions Json = new()
     {

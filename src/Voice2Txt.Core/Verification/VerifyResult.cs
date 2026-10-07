@@ -51,6 +51,8 @@ public sealed class DeliveryRecord
     public long HeldMs { get; set; }
     public long? ReleaseToDeliverMs { get; set; }
     public long? TranscribeMs { get; set; }
+    /// <summary>届ける前に確定版から取り除いた言い淀みの数(設定 removeFillers)。</summary>
+    public int FillersRemoved { get; set; }
 }
 
 public sealed class CancelRecord
@@ -144,6 +146,7 @@ public static class Evaluator
                     var ratio = TextSimilarity.Ratio(x.Text, got.Text);
                     if (ratio < x.Threshold) fails.Add($"{i + 1} 件目の文字列の一致率 {ratio:0.00}(下限 {x.Threshold:0.00})");
                 }
+                foreach (var w in Absent(x, got.Text)) fails.Add($"{i + 1} 件目に「{w}」が残っている");
             }
             for (int i = 1; i < r.Deliveries.Count; i++)
                 if (r.Deliveries[i].Seq < r.Deliveries[i - 1].Seq) fails.Add("届いた順が録音した順と違う");
@@ -153,6 +156,8 @@ public static class Evaluator
             var ratio = TextSimilarity.Ratio(tb.Text, r.Textbox);
             if (ratio < tb.Threshold) fails.Add($"テキスト欄の一致率 {ratio:0.00}(下限 {tb.Threshold:0.00})");
         }
+        if (e.Textbox is { } tb2)
+            foreach (var w in Absent(tb2, r.Textbox)) fails.Add($"テキスト欄に「{w}」が残っている");
         if (e.States is { } st)
         {
             var seen = r.States.Select(s => s.State).ToList();
@@ -204,5 +209,13 @@ public static class Evaluator
                 if (x.MaxMeter is { } hi && got.Meter > hi) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(上限 {hi:0.00})");
             }
         return fails;
+    }
+
+    /// <summary>期待の notContains のうち、届いた文字列に残っているもの(NFKC で比べる)。</summary>
+    private static IEnumerable<string> Absent(TextExpectation x, string got)
+    {
+        if (x.NotContains is not { Count: > 0 } ws) return [];
+        var g = got.Normalize(NormalizationForm.FormKC);
+        return ws.Where(w => w.Length > 0 && g.Contains(w.Normalize(NormalizationForm.FormKC), StringComparison.Ordinal));
     }
 }
