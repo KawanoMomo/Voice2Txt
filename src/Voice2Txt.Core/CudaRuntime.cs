@@ -32,7 +32,7 @@ public static class CudaRuntimeCatalog
         DllsInLoadOrder.Any(d => string.Equals(d, Path.GetFileName(fileName), StringComparison.OrdinalIgnoreCase));
 
     public static string DefaultDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Voice2Txt", "runtime");
+        Path.Combine(AppSettings.LocalDirectory, "runtime");
 }
 
 /// <summary>

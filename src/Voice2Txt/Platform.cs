@@ -68,9 +68,10 @@ internal sealed class CtrlVSender : IPasteSender
 }
 
 /// <summary>ログオン時の自動起動: HKCU\Software\Microsoft\Windows\CurrentVersion\Run の値 Voice2Txt。</summary>
-internal sealed class RunKeyAutoStart : IAutoStartRegistry
+internal sealed class RunKeyAutoStart(string name = AppVersion.ProductName) : IAutoStartRegistry
 {
-    private const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run", Name = "Voice2Txt";
+    private const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private readonly string Name = name;
 
     public string? Registered()
     {

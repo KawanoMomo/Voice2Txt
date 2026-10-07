@@ -7,7 +7,7 @@ namespace Voice2Txt.Core.Tests;
 
 public class CudaRuntimeTests : IDisposable
 {
-    private readonly string _dir = Path.Combine(Path.GetTempPath(), "ffv2t-cuda-" + Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "v2t-cuda-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose() { try { Directory.Delete(_dir, true); } catch { } }
 
