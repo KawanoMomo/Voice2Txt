@@ -38,6 +38,12 @@ internal static class Native
     [DllImport("user32.dll")] public static extern nint GetDC(nint hwnd);
     [DllImport("user32.dll")] public static extern int ReleaseDC(nint hwnd, nint hdc);
     [DllImport("gdi32.dll")] public static extern bool BitBlt(nint dst, int x, int y, int w, int h, nint src, int sx, int sy, int rop);
+    public const uint GW_HWNDPREV = 3;
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] public static extern nint GetWindow(nint hwnd, uint cmd);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(nint hwnd);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(nint hwnd, out RECT rect);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(nint hwnd, out uint pid);
 
     public static INPUT Key(ushort vk, bool up)
     {
