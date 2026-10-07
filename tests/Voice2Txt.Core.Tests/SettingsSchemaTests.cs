@@ -9,7 +9,7 @@ public class SettingsSchemaTests
     public void 設定ファイルの全項目が画面に名前と説明付きで並ぶ()
     {
         var keys = SettingsSchema.Items.Select(i => i.Key).ToList();
-        Assert.Equal(["talkKey", "model", "minPressSeconds", "silenceThreshold", "showInterim", "removeFillers", "fillers", "autoStart"], keys);
+        Assert.Equal(["talkKey", "model", "minPressSeconds", "silenceThreshold", "showInterim", "removeFillers", "fillers", "fetchCudaRuntime", "autoStart"], keys);
         // settings.json に書かれるキーと一致する(画面に無い設定項目を作らない)
         var json = System.Text.Json.JsonSerializer.Serialize(new AppSettings(), AppSettings.Json);
         var fileKeys = System.Text.Json.JsonDocument.Parse(json).RootElement.EnumerateObject().Select(p => p.Name).ToList();

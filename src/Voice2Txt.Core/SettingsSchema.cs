@@ -56,6 +56,8 @@ public static class SettingsSchema
             SettingKind.Toggle),
         new("fillers", "取り除く言い淀み", "取り除く語を読点(、)か空白で区切って並べます。2 文字の語は前後が句読点・文頭・文末のときだけ取り除きます(「あの人」は残ります)。",
             SettingKind.Words),
+        new("fetchCudaRuntime", "CUDA を取得する", "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら CPU で動きます。",
+            SettingKind.Toggle),
         new("autoStart", "ログオン時に起動する", "サインインしたときに自動で起動します(トレイのメニューと同じ)。",
             SettingKind.Toggle),
     ];
@@ -72,6 +74,7 @@ public static class SettingsSchema
         "minPressSeconds" => s.MinPressSeconds.ToString(CultureInfo.InvariantCulture),
         "silenceThreshold" => s.SilenceThreshold.ToString(CultureInfo.InvariantCulture),
         "showInterim" => s.ShowInterim ? "true" : "false",
+        "fetchCudaRuntime" => s.FetchCudaRuntime ? "true" : "false",
         "removeFillers" => s.RemoveFillers ? "true" : "false",
         "fillers" => string.Join("、", s.Fillers ?? []),
         "autoStart" => s.AutoStart ? "true" : "false",
@@ -114,6 +117,7 @@ public static class SettingsSchema
                 return null;
             }
             case "showInterim":
+            case "fetchCudaRuntime":
             case "removeFillers":
             case "autoStart":
             {
@@ -127,6 +131,7 @@ public static class SettingsSchema
                 switch (item.Key)
                 {
                     case "showInterim": s.ShowInterim = b.Value; break;
+                    case "fetchCudaRuntime": s.FetchCudaRuntime = b.Value; break;
                     case "removeFillers": s.RemoveFillers = b.Value; break;
                     default: s.AutoStart = b.Value; break;
                 }

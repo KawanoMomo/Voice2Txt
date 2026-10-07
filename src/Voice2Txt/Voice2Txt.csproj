@@ -24,6 +24,6 @@
     <SelfContained>false</SelfContained>
   </PropertyGroup>
 
-  <Import Project="CudaRedist.targets" />
+  <!-- NVIDIA の CUDA 実行時ライブラリは同梱しない(初回起動時に利用者の PC が取得する。Voice2Txt.Core/CudaRuntime.cs) -->
 
 </Project>

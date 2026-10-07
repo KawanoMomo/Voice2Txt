@@ -30,6 +30,9 @@ public sealed class AppSettings
     /// <summary>押下中、それまでの音声の暫定の文字起こし(途中経過)をオーバーレイに出す(初期値オン)。操作中のアプリには書き込まない。</summary>
     public bool ShowInterim { get; set; } = true;
 
+    /// <summary>CUDA の実行時ライブラリ(NVIDIA の cudart / cuBLAS)が無ければ、初回に NVIDIA の公式 redist から取得する(初期値オン)。false なら取得せず CPU で動く。</summary>
+    public bool FetchCudaRuntime { get; set; } = true;
+
     public static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -66,6 +69,7 @@ public sealed class AppSettings
     {
         TalkKey = o.TalkKey; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
         AutoStart = o.AutoStart; RemoveFillers = o.RemoveFillers; Fillers = [.. o.Fillers ?? []]; ShowInterim = o.ShowInterim;
+        FetchCudaRuntime = o.FetchCudaRuntime;
     }
 
     public void Save(string path)
