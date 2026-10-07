@@ -115,8 +115,9 @@ internal sealed class TrayApp : ApplicationContext
             }, _cts.Token);
             _engine.Set(t);
             _ptt.SetModelStatus(true);
-            AppLog.Write($"engine-ready runtime={t.Runtime} ms={sw.ElapsedMilliseconds}");
-            _overlay.BeginInvoke(() => { _tray.Text = "Voice2Txt — 待機中"; _tray.Icon = TrayIcons.Idle; });
+            var model = ModelCatalog.Get(_settings.Model).Name;
+            AppLog.Write($"engine-ready model={model} runtime={t.Runtime} ms={sw.ElapsedMilliseconds}");
+            _overlay.BeginInvoke(() => { _tray.Text = Trim($"Voice2Txt — 待機中(モデル {model})"); _tray.Icon = TrayIcons.Idle; });
         }
         catch (Exception ex)
         {

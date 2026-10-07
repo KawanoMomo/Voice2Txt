@@ -2,7 +2,7 @@
   "name": "primary-6",
   "persona": "primary",
   "step": 6,
-  "description": "言い直し: 話し終える前(1.5 秒)に離してすぐ押し直して話す。2 つが別々の発話として順に届く(1 つ目は途中までの文、2 つ目は全文)",
+  "description": "退避と言い直し: 話し終える前(1.5 秒)に離してすぐ押し直して話す。2 つが別々の発話として順に届く(1 つ目は途中までの文、2 つ目は全文)。続けて離した直後に前面ウィンドウを別の窓に切り替えると、貼られずクリップボードに残り「Ctrl+V で貼れます」が出る",
   "timeoutMs": 600000,
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
@@ -14,15 +14,25 @@
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 150 },
     { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "tests/fixtures/audio/utt-06.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "focus", "window": "other" },
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
     "deliveries": [
       { "to": "textbox" },
-      { "to": "textbox", "text": "テストの結果を共有しますので、各自で目を通してください。", "minSimilarity": 0.8 }
+      { "to": "textbox", "text": "テストの結果を共有しますので、各自で目を通してください。", "minSimilarity": 0.8 },
+      { "to": "clipboard", "text": "この資料は後でチャットに貼り付けておきます。", "minSimilarity": 0.8 }
     ],
-    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
+    "states": ["録音中", "処理中", "退避"],
+    "stateTexts": ["Ctrl+V で貼れます"],
+    "forbiddenStates": ["取り消し", "取り消し(無音)"],
     "cancellations": [],
-    "maxReleaseToDeliverMs": 1000
+    "maxReleaseToDeliverMs": 1000,
+    "screenshots": ["退避"]
   }
 }

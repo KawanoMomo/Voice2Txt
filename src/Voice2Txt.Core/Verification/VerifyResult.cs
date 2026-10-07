@@ -11,6 +11,8 @@ public sealed class VerifyResult
     public bool Completed { get; set; }
     public string? Error { get; set; }
     public string? Runtime { get; set; }
+    /// <summary>読み込んだモデルの名前(台本の settings.model を引いた結果)。</summary>
+    public string? Model { get; set; }
     public long? ModelReadyMs { get; set; }
     public List<DeliveryRecord> Deliveries { get; set; } = [];
     public List<CancelRecord> Cancellations { get; set; } = [];
@@ -162,6 +164,8 @@ public static class Evaluator
             fails.Add($"警告 [{string.Join(",", r.Warnings)}](期待 [{string.Join(",", ws)}])");
         if (e.Runtime is { } rt && !string.Equals(rt, r.Runtime, StringComparison.OrdinalIgnoreCase))
             fails.Add($"バックエンド {r.Runtime ?? "(読めていない)"}(期待 {rt})");
+        if (e.Model is { } m && !string.Equals(m, r.Model, StringComparison.OrdinalIgnoreCase))
+            fails.Add($"モデル {r.Model ?? "(読めていない)"}(期待 {m})");
         if (e.MaxReleaseToDeliverMs is { } max)
             foreach (var d in r.Deliveries.Where(d => d.ReleaseToDeliverMs > max))
                 fails.Add($"{d.Seq} 番の発話: 離してから届くまで {d.ReleaseToDeliverMs} ms(上限 {max})");

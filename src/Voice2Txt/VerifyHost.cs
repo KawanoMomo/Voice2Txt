@@ -170,7 +170,8 @@ internal sealed class VerifyHost : ApplicationContext
             _engine.Set(t);
             _result.ModelReadyMs = _sw.ElapsedMilliseconds;
             _result.Runtime = t.Runtime;
-            AppLog.Write($"engine-ready runtime={t.Runtime} ms={_sw.ElapsedMilliseconds}");
+            _result.Model = ModelCatalog.Get(_settings.Model).Name;
+            AppLog.Write($"engine-ready model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds}");
             _ptt.SetModelStatus(true);
             _modelReady.TrySetResult();
         }
