@@ -22,8 +22,13 @@ Voice2Txt(MIT、`LICENSE`)が同梱・参照する他者の著作物と、その
   SHA-256 で検証してから `%APPDATA%\Voice2Txt\models\` に置く。
 - **NVIDIA CUDA の実行時ライブラリ**(`cudart64_13.dll` / `cublas64_13.dll` / `cublasLt64_13.dll`)— NVIDIA の CUDA Toolkit EULA
   (https://docs.nvidia.com/cuda/eula/)に従う NVIDIA の著作物。配布物には含めない。
-  利用者の PC が NVIDIA の公式 redist(https://developer.download.nvidia.com/compute/cuda/redist)から取得する
-  (現在はビルドした PC がビルド時に取得して exe の横に置く。`src/Voice2Txt/CudaRedist.targets`。実行時の取得への切り替えは別の課題で行う)。
+  利用者の PC が初回起動時(または `Voice2Txt.exe --prepare-cuda`)に NVIDIA の公式 redist から取得し、SHA-256 を照合してから
+  `%LOCALAPPDATA%\Voice2Txt\runtime\` に置く(設定 `fetchCudaRuntime` で止められる。止めると CPU で動く)。取得元・版・ハッシュ(`src/Voice2Txt.Core/CudaRuntime.cs` に固定):
+
+  | 取り出す DLL | 取得元の zip | SHA-256(zip) |
+  |---|---|---|
+  | `cudart64_13.dll` | https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-13.0.96-archive.zip(CUDA Runtime 13.0.96) | `a2ed875f9997aa24904fb70cc9db3acd9308433cde99bc8e63ec1271c9da31b4` |
+  | `cublasLt64_13.dll` / `cublas64_13.dll` | https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-13.1.0.3-archive.zip(cuBLAS 13.1.0.3) | `4ac4847bbe4f7709b244956fcfc32197a2954ee70b155cb67eebd9ee26f7e339` |
 
 ## 開発・テストだけで使うもの(配布物に入らない)
 

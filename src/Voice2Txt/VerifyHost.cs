@@ -241,6 +241,10 @@ internal sealed class VerifyHost : ApplicationContext
         {
             _ptt.SetModelStatus(false, null);
             var dir = _sc.ModelsDir is null ? ModelCatalog.DefaultModelsDirectory : Scenario.ResolvePath(_scenarioPath, _sc.ModelsDir);
+            // 検証モードは CUDA の実行時ライブラリを取得しない(取得済みの runtime フォルダがあればそれを読み、無ければ CPU)
+            var cudaNote = await CudaRuntimeLoader.PrepareAsync(
+                new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), fetch: false, p => _ptt.SetModelStatus(false, p), CancellationToken.None);
+            lock (_result) _result.CudaRuntime = cudaNote ?? "ready";
             var t = await EngineLoader.LoadAsync(_settings, dir, p => _ptt.SetModelStatus(false, p), CancellationToken.None);
             _engine.Set(t);
             _result.ModelReadyMs = _sw.ElapsedMilliseconds;

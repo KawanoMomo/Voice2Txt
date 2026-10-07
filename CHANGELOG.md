@@ -1,5 +1,6 @@
 # CHANGELOG
 
+- BLK-human-20261007-2050-2: ビルド成果物・配布物に NVIDIA の CUDA 実行時ライブラリ(cudart / cuBLAS)が入らない。初回起動時に NVIDIA の公式 redist から取得し SHA-256 を照合して `%LOCALAPPDATA%\Voice2Txt\runtime\` に置いて CUDA で動く(取得中は「モデル準備中(CUDA の準備中 …)」、取得できなければ「CUDA 無し(CPU)」。設定 `fetchCudaRuntime` で止められ、`--prepare-cuda` で先に取得できる)
 - BLK-human-20261007-2024-1-wish: トレイの「設定…」で設定画面を開き、トークキー・モデル・取り消しのしきい値・途中経過・言い淀み・自動起動を名前と説明・選択肢付きで変えて保存できる(保存先は settings.json、手書きも可。保存後に今すぐ再起動を選べる)
 - BLK-human-20261007-2050-1: 公開の前提が揃う — MIT の `LICENSE` と、依存・実行時に取得するもの(モデルの重み・NVIDIA CUDA の実行時ライブラリ)を列挙した `THIRD_PARTY_NOTICES.md` を置き、リポジトリから合成音声(.wav)と開発機の絶対パスを外した。台本の音声は `tools/MakeFixtures` が `test-results/fixtures/` に作り、`tools/Verify` は足りなければ実行前に作る(素材の無い clone から通る)
 - BLK-human-20261007-2024-2: トレイアイコンのツールチップと右クリックメニューの先頭に、動いている版(例「Voice2Txt v0.4」。VERSION と同じタグ)が出る。exe のプロパティの製品バージョン・ログ `start version=`・検証モードの result.json `version` も同じ版

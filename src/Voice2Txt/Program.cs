@@ -15,6 +15,25 @@ internal static class Program
     private static int Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Contains("--prepare-cuda"))
+        {
+            // インストーラの最後などで、CUDA の実行時ライブラリを先に取得しておく(NVIDIA の公式 redist から。SHA-256 を照合)。
+            // runtime\download\ に取得元と同じ zip があればそれを使う(ネットに出ない)。
+            var prov = new CudaRuntimeProvisioner(Arg(args, "--runtime-dir") ?? CudaRuntimeCatalog.DefaultDirectory);
+            try
+            {
+                prov.EnsureAsync(new Progress<(string Phase, double Ratio)>(p => Console.Error.Write($"\r{p.Phase} {(int)(p.Ratio * 100)}%   ")), CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                Console.Error.WriteLine();
+                Console.WriteLine($"cuda-runtime ready dir={prov.RuntimeDir}");
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("cuda-runtime-error " + ex.Message);
+                return 1;
+            }
+        }
         if (args.Contains("--verify"))
         {
             var scenario = Arg(args, "--scenario");

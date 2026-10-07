@@ -18,6 +18,8 @@ public sealed class VerifyResult
     /// <summary>読み込んだモデルの名前(台本の settings.model を引いた結果)。</summary>
     public string? Model { get; set; }
     public long? ModelReadyMs { get; set; }
+    /// <summary>CUDA の実行時ライブラリ: ready(runtime フォルダから読めた)か、CPU で動く理由。検証モードは取得しない。</summary>
+    public string? CudaRuntime { get; set; }
     public List<DeliveryRecord> Deliveries { get; set; } = [];
     public List<CancelRecord> Cancellations { get; set; } = [];
     public List<StateRecord> States { get; set; } = [];

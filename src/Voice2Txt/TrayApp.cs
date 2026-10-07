@@ -116,17 +116,24 @@ internal sealed class TrayApp : ApplicationContext
         {
             _ptt.SetModelStatus(false, null);
             var sw = Stopwatch.StartNew();
-            var t = await EngineLoader.LoadAsync(_settings, ModelCatalog.DefaultModelsDirectory, p =>
+            void Progress(string p)
             {
                 _modelStatus = $"モデル準備中 {p}";
                 _ptt.SetModelStatus(false, p);
                 _overlay.BeginInvoke(() => _tray.Text = AppVersion.TrayText(_modelStatus));
-            }, _cts.Token);
+            }
+            // CUDA の実行時ライブラリは配布物に入れない: 無ければ初回に NVIDIA の redist から取得して runtime フォルダに置き、そこから読む
+            var cudaNote = await CudaRuntimeLoader.PrepareAsync(
+                new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), _settings.FetchCudaRuntime, Progress, _cts.Token);
+            if (cudaNote is not null)
+                _overlay.BeginInvoke(() => _tray.ShowBalloonTip(5000, "Voice2Txt", cudaNote, ToolTipIcon.Info));
+            var t = await EngineLoader.LoadAsync(_settings, ModelCatalog.DefaultModelsDirectory, Progress, _cts.Token);
             _engine.Set(t);
             _ptt.SetModelStatus(true);
             var model = ModelCatalog.Get(_settings.Model).Name;
             AppLog.Write($"engine-ready model={model} runtime={t.Runtime} ms={sw.ElapsedMilliseconds}");
-            _overlay.BeginInvoke(() => { _tray.Text = AppVersion.TrayText($"待機中(モデル {model})"); _tray.Icon = TrayIcons.Idle; });
+            var cpu = t.Runtime.Equals("Cuda", StringComparison.OrdinalIgnoreCase) ? "" : "、CUDA 無し(CPU)";
+            _overlay.BeginInvoke(() => { _tray.Text = AppVersion.TrayText($"待機中(モデル {model}{cpu})"); _tray.Icon = TrayIcons.Idle; });
         }
         catch (Exception ex)
         {
