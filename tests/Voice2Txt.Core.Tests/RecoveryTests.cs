@@ -149,6 +149,47 @@ public class RecoveryTests
     }
 
     [Fact]
+    public async Task 返し終えた後ろの短い結びの語も続きを復号して届ける()
+    {
+        // 約 33 秒の発話(詰めた後 30.55 秒)。復号は 28.82 秒で返し終え、後ろに 0.45 秒の「以上です」が残る(primary g01)
+        var s = Voice(30.55, (0.15, 28.89), (29.70, 30.15));
+        var d = new FakeDecoder
+        {
+            Main = slice => slice.Length == s.Length
+                ? [new DecodedSegment("共有してもらいます。", [new TimedToken(28.0, "共有してもらいます。")], 28.82)]
+                : [new DecodedSegment("以上です。", [new TimedToken(1.1, "以上です。")], 1.5)],
+        };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Equal("共有してもらいます。以上です。", r.Text);
+        Assert.Equal(2, d.MainCalls.Count);
+    }
+
+    [Fact]
+    public async Task 返し終えた所の後に短い息継ぎで続く文も続きを復号する()
+    {
+        var s = Voice(12, (0, 5.0), (5.3, 9.0)); // 文の切れ目の無音は 0.3 秒
+        var d = new FakeDecoder
+        {
+            Main = slice => slice.Length == s.Length
+                ? [new DecodedSegment("前の文。", [new TimedToken(2.0, "前の文。")], 5.0)]
+                : [new DecodedSegment("後ろの文。", [new TimedToken(1.5, "後ろの文。")], 4.0)],
+        };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Equal("前の文。後ろの文。", r.Text);
+        Assert.Equal(2, d.MainCalls.Count);
+    }
+
+    [Fact]
+    public async Task 鳴り続ける音の途中で返し終えたら続けない()
+    {
+        var s = Voice(12, (0, 12)); // 話し終えた後も音楽が切れ目なく続く
+        var d = new FakeDecoder { Main = _ => [new DecodedSegment("資料を送ります。", [new TimedToken(2.0, "資料を送ります。")], 5.0)] };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Equal("資料を送ります。", r.Text);
+        Assert.Single(d.MainCalls);
+    }
+
+    [Fact]
     public async Task 途中経過で拾い直した区間は_確定版で同じ音なら復号し直さない()
     {
         var cache = new SpanCache();

@@ -80,8 +80,17 @@ public static class Recovery
     /// <summary>復号が返し終えた所から後ろにこれ以上の音声が残っていれば、続きを復号する(whisper.cpp 自身も残り 1 秒未満で止める)。</summary>
     public const double ContinueSeconds = 1.0;
 
-    /// <summary>続きを復号するのは、返し終えた所(より少し前でもよい: この秒数まで)から始まる声の区間があるときだけ。</summary>
+    /// <summary>続きを復号するのは、返し終えた所(より少し前でもよい: この秒数まで)から始まる声があるときだけ。</summary>
     public const double ContinueSlackSeconds = 0.1;
+
+    /// <summary>
+    /// 続きを復号するのに要る、返し終えた所から始まる声の長さの合計(秒)。結びの短い語(「以上です」は声の芯が 0.45 秒ほど)を落とさず、
+    /// 話し終えた後の物音・息(0.2 秒ほど)では続けない。
+    /// </summary>
+    public const double ContinueMinVoiceSeconds = 0.3;
+
+    /// <summary>続きを判定するときに声を分ける無音の長さ(秒)。文の切れ目の短い息継ぎでも分け、切れ目の後の文を前の文の区間に含めない。</summary>
+    public const double ContinuePauseSeconds = 0.2;
 
     /// <summary>声の区間を分ける無音の長さ(秒)。</summary>
     public const double PauseSeconds = 0.5;
@@ -97,6 +106,9 @@ public static class Recovery
 
     /// <summary>拾い直した結果を捨てる、声が無い見込みの下限。</summary>
     public const double MaxNoSpeech = 0.6;
+
+    /// <summary>診断の 1 行(本文は渡さない)。ホストがログに書く。</summary>
+    public static Action<string>? Diag { get; set; }
 
     /// <summary>
     /// 語の穴: 隣り合う 2 つの語の時刻の間に、声(<see cref="Audio.VoiceLevel"/> 以上の 30 ms 区間)がこの秒数以上あれば、間の語を飛ばしたとみなす。
@@ -139,11 +151,16 @@ public static class Recovery
                 end = Math.Max(end, seg.EndSeconds);
             }
             int next = pos + (int)(end * rate);
+            if (pos > 0 || next < samples.Length - ContinueSeconds * rate)
+                Diag?.Invoke($"decode-pass from={(double)pos / rate:F2} end={(double)next / rate:F2} len={(double)samples.Length / rate:F2} voiceAfter={VoiceAfter(samples, threshold, next):F2}");
             // 返し終えた・進まない・残りが短いなら続けない。返し終えた所より後ろで始まる声の区間が無ければ(話し終えた後の息・物音・音楽の続きだけ)、
             // whisper.cpp 自身もそこで止める(続けると「ご視聴ありがとうございました」のような音声に無い文が付く)
             if (next <= pos || samples.Length - next < ContinueSeconds * rate) break;
-            int slack = (int)(ContinueSlackSeconds * rate);
-            if (!spans.Any(s => s.Start >= next - slack && s.End - s.Start >= MinSpanSeconds * rate)) break;
+            // 途中経過は写しの末尾が話している途中で切れていて、ほぼ毎回後ろに声が残る。そこで続けると押下中の復号が倍になり、離した時に
+            // 確定版を待たせる。途中経過は従来どおり 0.5 秒以上の声の区間が返し終えた所から始まるときだけ続ける(確定版がやり直すので結びを欠いてもよい)
+            if (prefetch
+                ? !spans.Any(s => s.Start >= next - (int)(ContinueSlackSeconds * rate) && s.End - s.Start >= MinSpanSeconds * rate)
+                : VoiceAfter(samples, threshold, next) < ContinueMinVoiceSeconds) break;
             pos = next;
         }
         string text = sb.ToString();
@@ -261,13 +278,24 @@ public static class Recovery
     }
 
     /// <summary>
-    /// 声の区間(サンプル位置の [開始, 終了))。30 ms 区間の RMS が <paramref name="level"/> 以上なら声とし、
-    /// <see cref="PauseSeconds"/> 秒未満の無音はつなぐ。
+    /// 復号が返し終えた所 <paramref name="from"/>(サンプル位置)より後ろで始まる声の長さの合計(秒)。声は <see cref="ContinuePauseSeconds"/> 以上の無音で分け、
+    /// 返し終えた所の手前(<see cref="ContinueSlackSeconds"/> より前)から続いている声は数えない(話し終えた後も鳴り続ける音楽の続きで、音声に無い文を作らない)。
     /// </summary>
-    public static List<(int Start, int End)> VoicedSpans(float[] samples, double level, int sampleRate = Audio.SampleRate)
+    public static double VoiceAfter(float[] samples, double threshold, int from, int sampleRate = Audio.SampleRate)
+    {
+        int slack = (int)(ContinueSlackSeconds * sampleRate);
+        return VoicedSpans(samples, Audio.VoiceLevel(samples, threshold, sampleRate), sampleRate, ContinuePauseSeconds)
+            .Where(s => s.Start >= from - slack).Sum(s => s.End - s.Start) / (double)sampleRate;
+    }
+
+    /// <summary>
+    /// 声の区間(サンプル位置の [開始, 終了))。30 ms 区間の RMS が <paramref name="level"/> 以上なら声とし、
+    /// <paramref name="pauseSeconds"/>(省略時 <see cref="PauseSeconds"/>)秒未満の無音はつなぐ。
+    /// </summary>
+    public static List<(int Start, int End)> VoicedSpans(float[] samples, double level, int sampleRate = Audio.SampleRate, double pauseSeconds = PauseSeconds)
     {
         int frame = Math.Max(1, sampleRate * 30 / 1000);
-        int gap = (int)Math.Ceiling(PauseSeconds * sampleRate / frame);
+        int gap = (int)Math.Ceiling(pauseSeconds * sampleRate / frame);
         var spans = new List<(int, int)>();
         int start = -1, last = -1;
         for (int f = 0; f * frame < samples.Length; f++)

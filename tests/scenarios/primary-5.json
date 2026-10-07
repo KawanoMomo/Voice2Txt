@@ -1,0 +1,29 @@
+{
+  "name": "primary-5",
+  "persona": "primary",
+  "step": 5,
+  "description": "約 33 秒の発話を末尾まで届ける: whisper が 30 秒の窓の手前で返し終え、後ろに短い結び「以上です」だけが残る発話(2 本)。どちらも文末の「以上です」が欠けずに届く",
+  "timeoutMs": 600000,
+  "actions": [
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "test-results/fixtures/utt-27.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 120000 },
+    { "do": "press", "audio": "test-results/fixtures/utt-28.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 120000 }
+  ],
+  "expect": {
+    "deliveries": [
+      { "to": "textbox", "text": "それでは定例の会議を始めます。本日の議題は三つです。一つ目は先週のリリースの振り返り、二つ目は来月の開発計画、三つ目は新しい担当者の割り当てです。まず先週のリリースについて、大きな問題は起きませんでしたが、設定画面の表示崩れが二件報告されています。原因は調査中で、担当は田中さんです。次の会議までに結果を共有してもらいます。以上です。", "minSimilarity": 0.8, "contains": ["以上です"] },
+      { "to": "textbox", "text": "障害対応の手順の見直しについて報告します。先月の夜間の障害では、連絡が担当者に届くまでに三十分かかりました。連絡網が古いままだったことが原因です。そこで、当番表を新しくし、通知の方法も一本化します。また、対応の記録を残す書式を決め、障害のあとの振り返りを必ず行うことにします。準備は来週中に終える予定です。以上です。", "minSimilarity": 0.8, "contains": ["以上です"] }
+    ],
+    "cancellations": [],
+    "maxReleaseToDeliverMs": 3000
+  }
+}
