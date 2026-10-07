@@ -34,6 +34,7 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
     public static WhisperTranscriber Load(string modelPath, string? modelName = null, double silenceThreshold = 0.01)
     {
         RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Cuda, RuntimeLibrary.Cpu];
+        Recovery.Diag ??= AppLog.Write;
         var heads = AlignmentHeads(modelName);
         var f = heads is { } h
             ? WhisperFactory.FromPath(modelPath, new WhisperFactoryOptions { UseDtwTimeStamps = true, HeadsPreset = h })
