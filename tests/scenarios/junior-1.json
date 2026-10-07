@@ -2,24 +2,35 @@
   "name": "junior-1",
   "persona": "junior",
   "step": 1,
-  "description": "起動直後(モデル読み込み中)にトークキーを押す。「モデル準備中」が出て録音されず、何も届かない。動いている版(VERSION のタグ)が result.json とトレイのツールチップの文言に出る",
+  "description": "設定 backend: vulkan で起こす(NVIDIA の GPU が無い PC と同じく Vulkan で動く)。起動直後(モデル読み込み中)にトークキーを押すと「モデル準備中」が出て録音されず、何も届かない。用意ができたら 1 文を押して流すと、Vulkan で文字起こしした確定版が 1 回だけ届く。動いている版(VERSION のタグ)が result.json とトレイのツールチップの文言に出る",
   "timeoutMs": 600000,
+  "settings": { "backend": "vulkan" },
   "actions": [
     { "do": "focus", "window": "textbox" },
     { "do": "press", "audio": "test-results/fixtures/ja-one-sentence.wav" },
     { "do": "wait", "ms": 500 },
     { "do": "release" },
     { "do": "waitModel", "timeoutMs": 540000 },
-    { "do": "waitIdle", "timeoutMs": 60000 }
+    { "do": "waitIdle", "timeoutMs": 60000 },
+    { "do": "press", "audio": "test-results/fixtures/ja-one-sentence.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 200 },
+    { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
-    "deliveries": [],
-    "textbox": { "text": "" },
-    "states": ["モデル準備中"],
+    "deliveries": [
+      { "to": "textbox", "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 }
+    ],
+    "textbox": { "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 },
+    "states": ["モデル準備中", "録音中", "処理中", "貼り付け完了"],
     "stateTexts": ["完了まで音声入力は使えません"],
-    "forbiddenStates": ["録音中", "処理中", "貼り付け完了", "退避"],
+    "forbiddenStates": ["退避"],
     "cancellations": ["ModelNotReady"],
-    "screenshots": ["モデル準備中"],
+    "runtime": "Vulkan",
+    "maxReleaseToDeliverMs": 3000,
+    "warnings": [],
+    "screenshots": ["モデル準備中", "貼り付け完了"],
     "versionFile": "VERSION"
   }
 }

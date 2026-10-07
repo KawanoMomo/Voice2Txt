@@ -46,6 +46,8 @@ public static class SettingsSchema
             SettingKind.Choice, TalkKeyChoices),
         new("model", "モデル", "文字起こしに使う Whisper のモデル。大きいほど正確で、用意(初回のダウンロード)と処理に時間がかかります。",
             SettingKind.Choice, ModelChoices),
+        new("backend", "バックエンド", "文字起こしに使う GPU / CPU。自動は CUDA(NVIDIA)→ Vulkan(GPU 全般)→ CPU の順に使えるものを選びます。選んだものを使えなければ CPU で動きます(CPU では途中経過を出しません)。",
+            SettingKind.Choice, Backends.Choices),
         new("minPressSeconds", "短い押下の取り消し(秒)", "これより短くトークキーを押して離したときは、録音せずに取り消します(押し間違いの対策)。",
             SettingKind.Number, Min: 0.05, Max: 2.0, Step: 0.05, Decimals: 2),
         new("silenceThreshold", "無音のしきい値", "録音の最も大きい音がこれ未満で、雑音よりはっきり大きい声も続かなければ、無音として取り消します。小さい声が取り消されるときは下げます(0.001〜0.1)。",
@@ -56,7 +58,7 @@ public static class SettingsSchema
             SettingKind.Toggle),
         new("fillers", "取り除く言い淀み", "取り除く語を読点(、)か空白で区切って並べます。2 文字の語は前後が句読点・文頭・文末のときだけ取り除きます(「あの人」は残ります)。",
             SettingKind.Words),
-        new("fetchCudaRuntime", "CUDA を取得する", "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら CPU で動きます。",
+        new("fetchCudaRuntime", "CUDA を取得する", "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら Vulkan か CPU で動きます。",
             SettingKind.Toggle),
         new("autoStart", "ログオン時に起動する", "サインインしたときに自動で起動します(トレイのメニューと同じ)。",
             SettingKind.Toggle),
@@ -71,6 +73,7 @@ public static class SettingsSchema
     {
         "talkKey" => s.TalkKey,
         "model" => s.Model,
+        "backend" => s.Backend,
         "minPressSeconds" => s.MinPressSeconds.ToString(CultureInfo.InvariantCulture),
         "silenceThreshold" => s.SilenceThreshold.ToString(CultureInfo.InvariantCulture),
         "showInterim" => s.ShowInterim ? "true" : "false",
@@ -105,6 +108,13 @@ public static class SettingsSchema
                 if (c is not null) { s.Model = c.Value; return null; }
                 if (ModelCatalog.TryGet(v, out var e)) { s.Model = e.Name; return null; }
                 return $"モデル「{v}」は選べません(選べるモデル: {ModelCatalog.Names})";
+            }
+            case "backend":
+            {
+                if (Backends.Normalize(v) is { } b && v.Length > 0) { s.Backend = b; return null; }
+                // 設定ファイルに手で書いた今の値はそのまま残せる(読めない値は起動時に自動として知らせる)
+                if (v.Length > 0 && string.Equals(v, s.Backend, StringComparison.OrdinalIgnoreCase)) return null;
+                return $"バックエンド「{v}」は選べません(選べるもの: {string.Join("、", Backends.Choices.Select(x => x.Label))})";
             }
             case "minPressSeconds":
             case "silenceThreshold":

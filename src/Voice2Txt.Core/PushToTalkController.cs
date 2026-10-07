@@ -93,6 +93,14 @@ public sealed class PushToTalkController : IAsyncDisposable
         lock (_gate) { _modelReady = ready; _modelDetail = detail; Emit(); }
     }
 
+    private volatile bool _interimEnabled = true;
+
+    /// <summary>
+    /// 途中経過を出すか(設定 showInterim がオンのときだけ効く)。読めたバックエンドが CPU なら呼び出し側が false にする
+    /// (CPU では途中経過の作り直しが確定版を遅らせる。<see cref="Backends.InterimAllowed"/>)。次に押した発話から効く。
+    /// </summary>
+    public bool InterimEnabled { get => _interimEnabled; set => _interimEnabled = value; }
+
     public void OnTalkKeyDown()
     {
         lock (_gate)
@@ -298,7 +306,7 @@ public sealed class PushToTalkController : IAsyncDisposable
     /// <summary>録音中になった発話の途中経過の作り直しを始める(ロック内で呼ぶ)。</summary>
     private void StartInterim(int seq)
     {
-        if (_o.InterimIntervalMs <= 0) return;
+        if (_o.InterimIntervalMs <= 0 || !_interimEnabled) return;
         StopInterim();
         var cts = _interimCts = new CancellationTokenSource();
         _ = Task.Run(() => InterimLoopAsync(seq, cts.Token));

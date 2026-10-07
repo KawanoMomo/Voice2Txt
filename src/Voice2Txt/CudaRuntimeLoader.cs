@@ -38,13 +38,13 @@ internal static class CudaRuntimeLoader
 
     /// <summary>
     /// 起動時の CUDA の用意: 無ければ(取得が許され、NVIDIA のドライバがあれば)取得してから読み込む。
-    /// 戻り値は利用者に知らせる文(CUDA で動けるなら null、CPU で動くならその理由)。
+    /// 戻り値は利用者に知らせる文(CUDA で動けるなら null、CUDA を使えないならその理由。次の Vulkan / CPU で動く)。
     /// </summary>
     public static async Task<string?> PrepareAsync(CudaRuntimeProvisioner prov, bool fetch, Action<string> onProgress, CancellationToken ct)
     {
         if (!prov.IsReady())
         {
-            if (!fetch) { AppLog.Write("cuda-runtime skipped fetch=false"); return "CUDA 無し(CPU): 取得しない設定です"; }
+            if (!fetch) { AppLog.Write("cuda-runtime skipped fetch=false"); return "CUDA を使えません: 実行時ライブラリを取得しない設定です"; }
             if (!HasNvidiaDriver()) { AppLog.Write("cuda-runtime skipped no-driver"); return null; } // NVIDIA の GPU が無い PC は黙って CPU
             try
             {
@@ -61,10 +61,10 @@ internal static class CudaRuntimeLoader
             catch (Exception ex)
             {
                 AppLog.Write("cuda-runtime-error " + ex.Message);
-                return "CUDA 無し(CPU): CUDA の実行時ライブラリを取得できませんでした(" + ex.Message + ")";
+                return "CUDA を使えません: CUDA の実行時ライブラリを取得できませんでした(" + ex.Message + ")";
             }
         }
-        if (Preload(prov) is { } err) { AppLog.Write("cuda-runtime-error " + err); return "CUDA 無し(CPU): " + err; }
+        if (Preload(prov) is { } err) { AppLog.Write("cuda-runtime-error " + err); return "CUDA を使えません: " + err; }
         AppLog.Write($"cuda-runtime loaded dir={prov.RuntimeDir}");
         return null;
     }

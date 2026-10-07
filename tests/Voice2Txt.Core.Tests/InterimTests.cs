@@ -44,6 +44,23 @@ public class InterimTests
     }
 
     [Fact]
+    public async Task CPUで動くとき途中経過を止めると_押下中に作り直さず確定版だけが届く()
+    {
+        await using var r = MakeRig();
+        r.Ptt.InterimEnabled = Backends.InterimAllowed("Cpu", true);
+        r.Ptt.OnTalkKeyDown();
+        await Task.Delay(100);
+        Assert.Equal(OverlayState.Recording, r.Ptt.CurrentView.State);
+        Assert.Null(r.Ptt.CurrentView.Interim);
+        Assert.Equal(0, r.Engine.InterimCalls);
+        r.Clock.NowMs += 1000;
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.Equal("確定", Assert.Single(r.Paster.Pasted).Text);
+        Assert.Equal(1, r.Engine.Calls);
+    }
+
+    [Fact]
     public async Task 途中経過は途中経過用の入口で_確定版は確定版の入口で文字起こしする()
     {
         // エンジンは途中経過のついでに、確定版が要りそうな拾い直しを先に済ませる(確定版の入口では先回りしない)

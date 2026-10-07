@@ -102,6 +102,7 @@ internal sealed class VerifyHost : ApplicationContext
         (_talkKey, _keys) = TalkKeyOf(next);
         _overlay.Invoke(() => _overlay.SetTalkKeyName(TalkKeys.DisplayName(_talkKey)));
         _ptt = CreatePtt();
+        _ptt.InterimEnabled = Backends.InterimAllowed(_engine.Runtime, true);
         await old.DisposeAsync();
         lock (_result) _result.Restarts++;
         AppLog.Write($"restart talkKey={_talkKey} model={next.Model} modelChanged={modelChanged}");
@@ -258,10 +259,18 @@ internal sealed class VerifyHost : ApplicationContext
             _prepTrack.Reset();
             _ptt.SetModelStatus(false, null);
             var dir = _sc.ModelsDir is null ? ModelCatalog.DefaultModelsDirectory : Scenario.ResolvePath(_scenarioPath, _sc.ModelsDir);
-            // 検証モードは CUDA の実行時ライブラリを取得しない(取得済みの runtime フォルダがあればそれを読み、無ければ CPU)
-            var cudaNote = await CudaRuntimeLoader.PrepareAsync(
-                new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), fetch: false, ModelProgress, CancellationToken.None);
-            lock (_result) _result.CudaRuntime = cudaNote ?? "ready";
+            if (Backends.InvalidWarning(_settings.Backend) is { } bw)
+            {
+                lock (_result) _result.Warnings.Add(bw);
+                AppLog.Write($"backend-invalid value={_settings.Backend} fallback={Backends.Auto}");
+            }
+            // 検証モードは CUDA の実行時ライブラリを取得しない(取得済みの runtime フォルダがあればそれを読み、無ければ次のバックエンド)。
+            // CUDA を試さない設定(vulkan / cpu)なら読みもしない(常駐時と同じ)
+            var cudaNote = Backends.NeedsCudaRuntime(_settings.Backend)
+                ? await CudaRuntimeLoader.PrepareAsync(
+                    new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), fetch: false, ModelProgress, CancellationToken.None)
+                : "CUDA を試さない設定です";
+            lock (_result) { _result.CudaRuntime = cudaNote ?? "ready"; _result.Backend = _settings.Backend; }
             ModelProvisioner? prov = null;
             switch (_sc.ModelPrep)
             {
@@ -282,8 +291,10 @@ internal sealed class VerifyHost : ApplicationContext
             _result.ModelReadyMs = _sw.ElapsedMilliseconds;
             _result.Runtime = t.Runtime;
             _result.Model = ModelCatalog.Get(_settings.Model).Name;
-            lock (_result) _result.TrayTooltip = AppVersion.TrayText($"待機中(モデル {_result.Model})"); // 常駐時と同じ文言
-            AppLog.Write($"engine-ready model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds}");
+            lock (_result) _result.TrayTooltip = AppVersion.TrayText(Backends.IdleTrayStatus(_result.Model, t.Runtime)); // 常駐時と同じ文言
+            _ptt.InterimEnabled = Backends.InterimAllowed(t.Runtime, true); // CPU では途中経過を出さない(常駐時と同じ)
+            lock (_result) _result.Interim = _ptt.InterimEnabled && _settings.ShowInterim;
+            AppLog.Write($"engine-ready model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds} backend={_settings.Backend} interim={_result.Interim}");
             _ptt.SetModelStatus(true);
             _modelReady.TrySetResult();
         }
