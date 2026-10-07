@@ -54,5 +54,15 @@
 
 全部の台本を回す: `dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios tests/scenarios --out <dir>`(`passed: 名前` / `failed: 名前` と理由、最後に `passed=N failed=M`、`<dir>/summary.json`)。台本の `audio` は `test-results/fixtures/` の合成音声を指し、足りなければ実行前に作る(`fixtures: N 本を作った`。日本語の音声合成の声が要る)
 
+## 配布物
+タグ `v*` を push すると GitHub Actions(`.github/workflows/windows-app.yml`。手動実行は `tag` 入力で同じ版を作り直す)が、
+`Voice2Txt-{版}-setup.exe`(Inno Setup。既定は自分だけに入れる。管理者権限は要らない)と `Voice2Txt-{版}-portable.zip`(フォルダごと展開してから `Voice2Txt\Voice2Txt.exe` を起動)を作り、Release に付ける。
+手元で同じものを作るには `powershell -File packaging\build.ps1 -Version 1.0 -OutDir dist`(Inno Setup 6 が無ければ zip まで)。
+
+- 中身: 自作コードと MIT の依存だけ(.NET ランタイム(self-contained、win-x64)・Whisper.net・whisper.cpp / ggml・NAudio)。`LICENSE.txt`・`THIRD_PARTY_NOTICES.md`・`README.txt`(初回起動で取得するもの)を同梱する。版はタグ(exe と setup.exe の版を照合する)
+- 含めないもの: NVIDIA の CUDA 実行時ライブラリとモデルの重み。`build.ps1` は publish の中に `cudart*` / `cublas*` などの NVIDIA の DLL か `.bin` があれば止める
+- **初回起動で取得するもの**(ネットに出るのはこの 2 つだけ): Whisper のモデルの重み(初期値 `large-v3-turbo` 約 1.6 GB、Hugging Face ggerganov/whisper.cpp から。`%APPDATA%\Voice2Txt\models\`)と、NVIDIA の GPU がある PC では CUDA の実行時ライブラリ(cudart / cuBLAS 約 500 MB、NVIDIA の公式 redist から。`%LOCALAPPDATA%\Voice2Txt\runtime\`。設定 `fetchCudaRuntime: false` で取得せず CPU で動く)。どちらも SHA-256 を照合する。インストーラの最後に「CUDA の実行時ライブラリ(NVIDIA)を今取得する」を選ぶと先に取得する(`--prepare-cuda`)
+- アンインストールはアプリのフォルダとログオン時の自動起動の登録を消す。設定・モデル・CUDA の実行時ライブラリ(`%APPDATA%` / `%LOCALAPPDATA%` の `Voice2Txt`)は残る
+
 ## 開発
 このリポジトリは自律開発ループが育てる。

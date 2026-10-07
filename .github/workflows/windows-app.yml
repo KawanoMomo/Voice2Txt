@@ -1,0 +1,101 @@
+# Windows の配布物(setup.exe と portable.zip)を作り、Release に付ける — BLK-human-20261007-2050-3。
+#
+# リポジトリにバイナリは入れない。タグ v* を push したとき(と手動実行)だけ作る。
+# 中身は自作コードと MIT の依存(.NET ランタイム・Whisper.net・whisper.cpp/ggml・NAudio)だけで、NVIDIA の DLL とモデルの重みは入れない
+# (初回起動で利用者の PC が取得する)。作り方と中身の検査は packaging/build.ps1(手元でも同じものを作れる)。
+name: windows-app
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '配布物を付け直すタグ(例 v1.0)。タグ push の run が赤だったとき、直した release ブランチから同じ版を作って Release に添付する'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version from tag
+        shell: pwsh
+        env:
+          INPUT_TAG: ${{ inputs.tag || '' }}
+        run: |
+          # 版の正本はタグ。手動実行で tag 入力が無ければ直近のタグ。取れなければ止める
+          $v = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF -replace '^refs/tags/v','' } elseif ($env:INPUT_TAG) { $env:INPUT_TAG -replace '^v','' } else { '' }
+          if (-not $v) { git fetch --tags --force --unshallow 2>$null; $v = ((git describe --tags --abbrev=0 2>$null) -replace '^v','') }
+          if ($v -notmatch '^\d+(\.\d+)+$') { throw "配布物の版が取れない ($v)" }
+          "APP_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Unit tests
+        run: dotnet test tests/Voice2Txt.Core.Tests -c Release
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
+
+      - name: Build setup.exe and portable.zip
+        shell: pwsh
+        run: ./packaging/build.ps1 -Version $env:APP_VERSION -OutDir dist -RequireInstaller
+
+      # 展開 → 中身の照合 → 起動して生きていることを確かめる(モデルの取得は始まるが待たない)
+      - name: Smoke-test the portable zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'smoke'
+          Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive "dist\Voice2Txt-$env:APP_VERSION-portable.zip" -DestinationPath $work
+          $app = Join-Path $work 'Voice2Txt'
+          foreach ($rel in @('Voice2Txt.exe', 'LICENSE.txt', 'THIRD_PARTY_NOTICES.md', 'README.txt','runtimes\win-x64\whisper.dll', 'runtimes\cuda\win-x64\whisper.dll')) {
+            if (-not (Test-Path (Join-Path $app $rel))) { throw "zip から $rel が落ちている" }
+          }
+          $bad = Get-ChildItem $app -Recurse -File | Where-Object { $_.Name -match '^(cudart|cublas|cublasLt)\d*_?\d*\.dll$' -or $_.Name -match '\.(bin|gguf)$' }
+          if ($bad) { throw "zip に NVIDIA の DLL かモデルが入っている: $($bad.Name -join ', ')" }
+          $p = Start-Process -FilePath (Join-Path $app 'Voice2Txt.exe') -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { throw "portable 版が起動直後に終了した (exit $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "portable smoke ok"
+
+      - name: Smoke-test the installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = Start-Process "dist\Voice2Txt-$env:APP_VERSION-setup.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "setup.exe exit $($p.ExitCode)" }
+          $e = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Voice2Txt*' })
+          if ($e.Count -ne 1) { throw "アンインストール登録が $($e.Count) 件 (1 件であるべき)" }
+          if ($e[0].DisplayVersion -ne $env:APP_VERSION) { throw "登録の版 $($e[0].DisplayVersion) がタグ $env:APP_VERSION でない" }
+          $exe = Join-Path $e[0].InstallLocation 'Voice2Txt.exe'
+          if (-not (Test-Path $exe)) { throw "インストール先に $exe が無い" }
+          Write-Host "installer smoke ok ($($e[0].InstallLocation))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Voice2Txt-windows
+          path: |
+            dist/*-setup.exe
+            dist/*-portable.zip
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: |
+            dist/*-setup.exe
+            dist/*-portable.zip

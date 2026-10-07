@@ -10,3 +10,4 @@ models/
 *.m4a
 *.flac
 publish/
+dist/
