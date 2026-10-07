@@ -172,6 +172,7 @@ public static class Evaluator
                     if (ratio < x.Threshold) fails.Add($"{i + 1} 件目の文字列の一致率 {ratio:0.00}(下限 {x.Threshold:0.00})");
                 }
                 foreach (var w in Absent(x, got.Text)) fails.Add($"{i + 1} 件目に「{w}」が残っている");
+                foreach (var w in Missing(x, got.Text)) fails.Add($"{i + 1} 件目に「{w}」が無い");
             }
             for (int i = 1; i < r.Deliveries.Count; i++)
                 if (r.Deliveries[i].Seq < r.Deliveries[i - 1].Seq) fails.Add("届いた順が録音した順と違う");
@@ -270,5 +271,13 @@ public static class Evaluator
         if (x.NotContains is not { Count: > 0 } ws) return [];
         var g = got.Normalize(NormalizationForm.FormKC);
         return ws.Where(w => w.Length > 0 && g.Contains(w.Normalize(NormalizationForm.FormKC), StringComparison.Ordinal));
+    }
+
+    /// <summary>期待の contains のうち、届いた文字列に無いもの(NFKC・大文字小文字を問わずに比べる)。</summary>
+    private static IEnumerable<string> Missing(TextExpectation x, string got)
+    {
+        if (x.Contains is not { Count: > 0 } ws) return [];
+        var g = got.Normalize(NormalizationForm.FormKC);
+        return ws.Where(w => w.Length > 0 && !g.Contains(w.Normalize(NormalizationForm.FormKC), StringComparison.OrdinalIgnoreCase));
     }
 }

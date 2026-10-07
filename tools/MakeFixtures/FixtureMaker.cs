@@ -40,6 +40,8 @@ public static class FixtureMaker
         ["utt-19"] = "了解です。",
         ["utt-20"] = "送ります。",
         ["utt-21"] = "来週のリリースに向けて、設計書の第三章に認証まわりのモジュールを分割する案と、ログの出力形式を統一する案を追記しましたので、各自で目を通したうえで、明日の打ち合わせまでに画面の配置についても意見をください。",
+        ["utt-22"] = "来週の出張について、Please confirm the hotel booking.と英語で書かれたメールが届いたので、返信をお願いします。", // Mixed: 英文は英語の男性の声
+        ["utt-23"] = "部長が会議の最後に、Let's meet again next week.と言っていました。", // Mixed: 英文は英語の男性の声
     };
 
     /// <summary>無音だけの素材(秒)。無音で押して離したら取り消し、を確かめる。</summary>
@@ -73,6 +75,19 @@ public static class FixtureMaker
         ["utt-20"] = 0.0003,
     };
 
+    /// <summary>
+    /// 言語の混ざった発話: 日本語の文の間に、別の話者(英語の声)が読む英文を挟む。名前 = 読む順の (声の言語, 声の性別, 文)。
+    /// <see cref="Items"/> の文はこれをつないだもの(台本の期待と同じ)。声の切り替わりの前後に <see cref="MixedPause"/> 秒の間を置く。
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, (string Culture, VoiceGender Gender, string Text)[]> Mixed = new Dictionary<string, (string, VoiceGender, string)[]>
+    {
+        ["utt-22"] = [("ja-JP", VoiceGender.Female, "来週の出張について、"), ("en-US", VoiceGender.Male, "Please confirm the hotel booking."), ("ja-JP", VoiceGender.Female, "と英語で書かれたメールが届いたので、返信をお願いします。")],
+        ["utt-23"] = [("ja-JP", VoiceGender.Female, "部長が会議の最後に、"), ("en-US", VoiceGender.Male, "Let's meet again next week."), ("ja-JP", VoiceGender.Female, "と言っていました。")],
+    };
+
+    /// <summary>言語の混ざった発話で、声が切り替わる所に置く間(秒)。</summary>
+    public const double MixedPause = 0.5;
+
     public static IEnumerable<string> Names => Items.Keys.Concat(Silences.Keys);
 
     /// <summary>
@@ -94,7 +109,7 @@ public static class FixtureMaker
             else
             {
                 var pad = Pads.TryGetValue(name, out var p) ? p : (0, 0);
-                said = Speak(Items[name], tmp, pad.Item1, pad.Item2);
+                said = Mixed.TryGetValue(name, out var parts) ? SpeakMixed(parts, tmp) : Speak(Items[name], tmp, pad.Item1, pad.Item2);
                 if (Levels.TryGetValue(name, out var lv)) said += $" ({Quiet(tmp, lv.Level, lv.Tail)})";
                 if (Noises.TryGetValue(name, out var nz)) { AddNoise(tmp, nz); said += string.Format(CultureInfo.InvariantCulture, " (雑音 RMS {0})", nz); }
             }
@@ -127,6 +142,30 @@ public static class FixtureMaker
         if (headSec > 0) p.AppendBreak(TimeSpan.FromSeconds(headSec));
         p.AppendText(text);
         if (tailSec > 0) p.AppendBreak(TimeSpan.FromSeconds(tailSec));
+        s.Speak(p);
+        s.SetOutputToNull();
+        return sb.ToString();
+    }
+
+    /// <summary>文ごとに声を切り替えて 1 本に読む(<see cref="Mixed"/>)。その言語・性別の声が入っていなければ失敗する。</summary>
+    private static string SpeakMixed((string Culture, VoiceGender Gender, string Text)[] parts, string wav)
+    {
+        using var s = new SpeechSynthesizer();
+        var voices = s.GetInstalledVoices().Select(v => v.VoiceInfo).ToList();
+        var sb = new StringBuilder();
+        s.PhonemeReached += (_, e) => sb.Append(e.Phoneme);
+        s.SetOutputToWaveFile(wav, new SpeechAudioFormatInfo(16000, AudioBitsPerSample.Sixteen, AudioChannel.Mono));
+        var p = new PromptBuilder(new CultureInfo("ja-JP"));
+        for (int i = 0; i < parts.Length; i++)
+        {
+            var (culture, gender, text) = parts[i];
+            var v = voices.FirstOrDefault(x => x.Culture.Name == culture && x.Gender == gender)
+                ?? throw new InvalidOperationException($"{culture} の{(gender == VoiceGender.Male ? "男性" : "女性")}の音声合成の声が入っていない(Windows の設定 → 時刻と言語 → 音声 で追加する)");
+            if (i > 0) p.AppendBreak(TimeSpan.FromSeconds(MixedPause));
+            p.StartVoice(v.Name);
+            p.AppendText(text);
+            p.EndVoice();
+        }
         s.Speak(p);
         s.SetOutputToNull();
         return sb.ToString();

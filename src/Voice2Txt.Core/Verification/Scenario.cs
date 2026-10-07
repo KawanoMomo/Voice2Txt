@@ -154,5 +154,8 @@ public sealed class TextExpectation
     /// <summary>届いた文字列に含まれていてはならない語(例: 取り除くはずの言い淀み)。省略可。</summary>
     public List<string>? NotContains { get; set; }
 
+    /// <summary>届いた文字列に入っていなければならない語(例: 発話の途中に挟まった英文。大文字小文字は問わない)。省略可。</summary>
+    public List<string>? Contains { get; set; }
+
     [JsonIgnore] public double Threshold => MinSimilarity ?? 1.0;
 }
