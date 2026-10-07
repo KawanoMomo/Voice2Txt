@@ -34,6 +34,7 @@ internal sealed class OverlayForm : Form
         Opacity = 0.92;
         DoubleBuffered = true;
         Font = new Font("Yu Gothic UI", 10f);
+        _rowH = Math.Max(36, Font.Height + 16);
         _anim.Tick += (_, _) => { _tick++; SampleMeter(); Invalidate(); };
         _hide.Tick += (_, _) => { _hide.Stop(); HideOverlay(); };
     }
@@ -103,9 +104,34 @@ internal sealed class OverlayForm : Form
 
     private int PartsWidth(IReadOnlyList<OverlayPart> parts) => parts.Sum(PartWidth) + Gap * Math.Max(0, parts.Count - 1);
 
+    // 途中経過の欄(MOC の .partial: 本文の下に区切り線、折り返して数行。収まらなければ頭を削って末尾を残す)
+    private const int InterimMaxW = 520, InterimTop = 4, InterimBottom = 10;
+    private const TextFormatFlags WrapFlags = TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl;
+    private static readonly Color InterimColor = Color.FromArgb(0xEB, 0xEB, 0xEB), Rule = Color.FromArgb(51, 255, 255, 255);
+    private readonly Font _interimFont = new("Yu Gothic UI", 10.5f);
+    private int _rowH;
+    private string? _interimShown;
+    private Rectangle _interimBox;
+
+    /// <summary>今オーバーレイに描いている途中経過(欄に収めた後の文字列。無ければ null)。</summary>
+    public string? InterimShown => _interimShown;
+
+    private Size MeasureWrapped(string s, int width) => TextRenderer.MeasureText(s, _interimFont, new Size(width, int.MaxValue), WrapFlags);
+
     private void LayoutFor(OverlayView v)
     {
-        int w = PadX + IconW + Gap + PartsWidth(v.Parts(_talkKeyName)) + PadX, h = Math.Max(36, Font.Height + 16);
+        int w = PadX + IconW + Gap + PartsWidth(v.Parts(_talkKeyName)) + PadX, h = _rowH;
+        _interimShown = null;
+        if (!string.IsNullOrEmpty(v.Interim))
+        {
+            int lineH = TextRenderer.MeasureText("あ", _interimFont, Size.Empty, Flags).Height;
+            int oneLine = TextRenderer.MeasureText(v.Interim, _interimFont, Size.Empty, Flags).Width + 2;
+            int tw = Math.Min(InterimMaxW, Math.Max(w - 2 * PadX, oneLine));
+            _interimShown = OverlayView.FitInterim(v.Interim, s => MeasureWrapped(s, tw).Height <= lineH * OverlayView.InterimMaxLines);
+            _interimBox = new Rectangle(PadX, _rowH + InterimTop, tw, MeasureWrapped(_interimShown, tw).Height);
+            w = Math.Max(w, tw + 2 * PadX);
+            h = _interimBox.Bottom + InterimBottom;
+        }
         var wa = Screen.PrimaryScreen!.WorkingArea;
         Bounds = new Rectangle(wa.Left + (wa.Width - w) / 2, wa.Bottom - 18 - h, w, h);
         using var path = Rounded(new Rectangle(0, 0, w, h), Radius);
@@ -131,7 +157,7 @@ internal sealed class OverlayForm : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Bg);
         var v = _view;
-        int cy = size.Height / 2, x = 16;
+        int cy = _rowH / 2, x = 16;
         switch (v.State)
         {
             case OverlayState.Preparing:
@@ -183,6 +209,11 @@ internal sealed class OverlayForm : Form
                     break;
             }
             x += pw + Gap;
+        }
+        if (_interimShown is not null)
+        {
+            using (var pen = new Pen(Rule)) g.DrawLine(pen, PadX, _rowH - 1, size.Width - PadX, _rowH - 1);
+            TextRenderer.DrawText(g, _interimShown, _interimFont, _interimBox, InterimColor, WrapFlags);
         }
     }
 

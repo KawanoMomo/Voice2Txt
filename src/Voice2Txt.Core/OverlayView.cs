@@ -16,9 +16,26 @@ public enum OverlayState
     DeliveryFailed,     // 入力失敗(確定版をクリップボードに入れられなかった。退避と違い Ctrl+V では貼れない)
 }
 
-public sealed record OverlayView(OverlayState State, int PendingCount = 0, string? Detail = null)
+/// <param name="Interim">途中経過(押下中にそれまでの音声から作り直した暫定の文字起こし)。オーバーレイの本文の下に出すだけで、届けない。</param>
+public sealed record OverlayView(OverlayState State, int PendingCount = 0, string? Detail = null, string? Interim = null)
 {
     public static readonly OverlayView Hidden = new(OverlayState.Hidden);
+
+    /// <summary>途中経過の欄に収める最大の行数。超えたら頭を削り、末尾(いま話している所)を残す。</summary>
+    public const int InterimMaxLines = 3;
+
+    /// <summary>途中経過を欄に収める: 収まらなければ頭から削って「…」を付ける。<paramref name="fits"/> は文字列が欄に収まるか。</summary>
+    public static string FitInterim(string text, Func<string, bool> fits)
+    {
+        if (fits(text)) return text;
+        int lo = 1, hi = text.Length; // 頭から削る文字数(二分探索で最小を探す)
+        while (lo < hi)
+        {
+            int mid = (lo + hi) / 2;
+            if (fits("…" + text[mid..])) hi = mid; else lo = mid + 1;
+        }
+        return "…" + text[lo..];
+    }
 
     /// <summary>状態の名前(結果 JSON・スクショのファイル名・Verify の期待に使う)。</summary>
     public string Label => LabelOf(State);

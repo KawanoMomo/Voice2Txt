@@ -38,6 +38,7 @@ internal sealed class WaveInRecorder : IRecorder
         public Task<float[]> StopAsync() { _w.StopRecording(); return _done.Task; }
         public void Abort() { try { _w.StopRecording(); } catch { } }
         public double InputRms { get { lock (_buf) return _rms; } }
+        public float[] Snapshot() { lock (_buf) return _buf.ToArray(); }
     }
 }
 

@@ -15,6 +15,8 @@ internal sealed class FakeRecorder : IRecorder
     public int Aborted;
     /// <summary>録音中の音の大きさ(IRecording.InputRms が返す値)。</summary>
     public double InputRms;
+    /// <summary>押下中の写し(IRecording.Snapshot が返す音声)。null なら録音全体。</summary>
+    public float[]? SnapshotAudio;
 
     public IRecording Start(Action onStarted)
     {
@@ -27,6 +29,7 @@ internal sealed class FakeRecorder : IRecorder
         public Task<float[]> StopAsync() => Task.FromResult(audio);
         public void Abort() => r.Aborted++;
         public double InputRms => r.InputRms;
+        public float[] Snapshot() => r.SnapshotAudio ?? audio;
     }
 
     public static float[] Tone(double seconds, float amp = 0.2f) =>

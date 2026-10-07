@@ -17,6 +17,9 @@ public interface IRecording
     /// <summary>録音を捨てる(取り消し)。</summary>
     void Abort();
 
+    /// <summary>押下中に、それまでに録れた 16 kHz モノラルの音声の写しを返す(録音は続ける)。途中経過の文字起こしに使う。</summary>
+    float[] Snapshot();
+
     /// <summary>直近(<see cref="Audio.MeterWindow"/> サンプル)に録れた音の大きさ(RMS、0〜1)。録音中の音量バーに使う。音が届く前・届き終えた後は 0。</summary>
     double InputRms { get; }
 }
@@ -38,7 +41,7 @@ public interface IPasteSender
     void SendPaste();
 }
 
-/// <summary>文字起こしエンジンの境界。途中経過は <paramref name="partial"/> に返せる形にしておく(基盤では使わない)。</summary>
+/// <summary>文字起こしエンジンの境界。途中経過は、押下中にそれまでの音声の写しを同じエンジンで文字起こしし直して作る(<paramref name="partial"/> は使わない)。</summary>
 public interface ITranscriber
 {
     Task<string> TranscribeAsync(float[] samples16k, IProgress<string>? partial, CancellationToken ct);

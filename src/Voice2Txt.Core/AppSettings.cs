@@ -27,6 +27,9 @@ public sealed class AppSettings
     /// <summary>取り除く言い淀みの語(かな。カタカナで書かれたものも同じ語として扱う)。2 文字の語は前後が区切りのときだけ取り除く。</summary>
     public List<string> Fillers { get; set; } = [.. Core.Fillers.DefaultWords];
 
+    /// <summary>押下中、それまでの音声の暫定の文字起こし(途中経過)をオーバーレイに出す(初期値オン)。操作中のアプリには書き込まない。</summary>
+    public bool ShowInterim { get; set; } = true;
+
     public static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
