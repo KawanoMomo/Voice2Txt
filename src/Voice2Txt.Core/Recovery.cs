@@ -8,13 +8,17 @@ public readonly record struct TimedToken(double AtSeconds, string Text);
 /// <summary>
 /// 復号の 1 区切り(whisper の segment)。<see cref="Text"/> が正しい文字列。<see cref="Tokens"/> は語ごとの時刻で、
 /// 語の文字列は <see cref="Text"/> と切れ目が合わないことがある(多バイト文字が 2 つの語に割れると、それぞれ U+FFFD になる)。
+/// <see cref="EndSeconds"/> は区切りの終わり(渡した音声の先頭からの秒)。
 /// </summary>
-public sealed record DecodedSegment(string Text, IReadOnlyList<TimedToken> Tokens);
+public sealed record DecodedSegment(string Text, IReadOnlyList<TimedToken> Tokens, double EndSeconds = 0);
 
 /// <summary>拾い直しが使う復号の境界(本番は whisper.cpp、unit は偽物)。</summary>
 public interface ISpanDecoder
 {
-    /// <summary>確定版の復号(日本語・初期プロンプト)。<see cref="Recovery.WindowSeconds"/> 秒以下の音声を渡す。</summary>
+    /// <summary>
+    /// 確定版の復号(日本語・初期プロンプト)。音声の途中で返し終えることがある(DTW を有効にした whisper.cpp は窓を送る途中で止まる)。
+    /// 続きは <see cref="Recovery.TranscribeAsync"/> が最後の区切りの終わりから渡し直す。
+    /// </summary>
     Task<IReadOnlyList<DecodedSegment>> DecodeAsync(float[] samples, CancellationToken ct);
 
     /// <summary>拾い直しの復号(言語は自動判定・プロンプト無し・前の文脈無し)。文字列と、声が無い見込み(0〜1)。</summary>
@@ -32,8 +36,11 @@ public sealed record RecoveredText(string Text, int Recovered);
 /// </summary>
 public static class Recovery
 {
-    /// <summary>1 回の復号に渡す最長(秒)。これより長い発話は声の間で切って順に復号する(whisper の窓は 30 秒)。</summary>
-    public const double WindowSeconds = 29;
+    /// <summary>復号が返し終えた所から後ろにこれ以上の音声が残っていれば、続きを復号する(whisper.cpp 自身も残り 1 秒未満で止める)。</summary>
+    public const double ContinueSeconds = 1.0;
+
+    /// <summary>続きを復号するのは、返し終えた所(より少し前でもよい: この秒数まで)から始まる声の区間があるときだけ。</summary>
+    public const double ContinueSlackSeconds = 0.1;
 
     /// <summary>声の区間を分ける無音の長さ(秒)。</summary>
     public const double PauseSeconds = 0.5;
@@ -51,7 +58,8 @@ public static class Recovery
     public const double MaxNoSpeech = 0.6;
 
     /// <summary>
-    /// 確定版を作る: <see cref="Windows"/> で切った順に復号してつなぎ、文字の無い声の区間を拾い直して差し込む。
+    /// 確定版を作る: 全体を復号し、復号が途中で返し終えたら最後の区切りの終わりから続きを復号してつなぐ(whisper.cpp が窓を送るのと同じ位置)。
+    /// その後、文字の無い声の区間を拾い直して差し込む。
     /// <paramref name="threshold"/> は無音のしきい値(設定値。声の区間は <see cref="Audio.VoiceLevel"/> で決める)。
     /// </summary>
     public static async Task<RecoveredText> TranscribeAsync(float[] samples, double threshold, ISpanDecoder decoder, CancellationToken ct)
@@ -60,9 +68,11 @@ public static class Recovery
         var spans = VoicedSpans(samples, Audio.VoiceLevel(samples, threshold));
         var sb = new StringBuilder();
         var tokens = new List<(int Offset, double At, string Text)>();
-        foreach (var (ws, we) in Windows(samples, spans))
+        int pos = 0;
+        while (true)
         {
-            var slice = ws == 0 && we == samples.Length ? samples : samples[ws..we];
+            var slice = pos == 0 ? samples : samples[pos..];
+            double end = 0;
             foreach (var seg in await decoder.DecodeAsync(slice, ct))
             {
                 int baseOffset = sb.Length;
@@ -70,10 +80,18 @@ public static class Recovery
                 for (int i = 0; i < seg.Tokens.Count; i++)
                 {
                     var t = seg.Tokens[i];
-                    tokens.Add((baseOffset + offsets[i], t.AtSeconds < 0 ? -1 : t.AtSeconds + (double)ws / rate, t.Text));
+                    tokens.Add((baseOffset + offsets[i], t.AtSeconds < 0 ? -1 : t.AtSeconds + (double)pos / rate, t.Text));
                 }
                 sb.Append(seg.Text);
+                end = Math.Max(end, seg.EndSeconds);
             }
+            int next = pos + (int)(end * rate);
+            // 返し終えた・進まない・残りが短いなら続けない。返し終えた所より後ろで始まる声の区間が無ければ(話し終えた後の息・物音・音楽の続きだけ)、
+            // whisper.cpp 自身もそこで止める(続けると「ご視聴ありがとうございました」のような音声に無い文が付く)
+            if (next <= pos || samples.Length - next < ContinueSeconds * rate) break;
+            int slack = (int)(ContinueSlackSeconds * rate);
+            if (!spans.Any(s => s.Start >= next - slack && s.End - s.Start >= MinSpanSeconds * rate)) break;
+            pos = next;
         }
         string text = sb.ToString();
         var words = tokens.Where(t => t.At >= 0 && IsWord(t.Text)).ToList();
@@ -122,43 +140,6 @@ public static class Recovery
         }
         if (start >= 0) spans.Add((start * frame, Math.Min(samples.Length, (last + 1) * frame)));
         return spans;
-    }
-
-    /// <summary>
-    /// 復号に渡す区切り([開始, 終了))。<see cref="WindowSeconds"/> 秒以下なら全体を 1 つ。長ければ、窓に収まる最後の声の間の中ほどで切る。
-    /// 間の無い長い声は、窓の後半で最も静かな 30 ms 区間で切る。
-    /// </summary>
-    public static List<(int Start, int End)> Windows(float[] samples, IReadOnlyList<(int Start, int End)> spans, int sampleRate = Audio.SampleRate)
-    {
-        int max = (int)(WindowSeconds * sampleRate);
-        var res = new List<(int, int)>();
-        int start = 0;
-        while (samples.Length - start > max)
-        {
-            int limit = start + max, cut = -1;
-            for (int i = 0; i + 1 < spans.Count; i++)
-            {
-                int mid = (spans[i].End + spans[i + 1].Start) / 2;
-                if (mid > start && mid <= limit) cut = mid;
-            }
-            if (cut < 0) cut = QuietestCut(samples, start + max / 2, limit, sampleRate);
-            res.Add((start, cut));
-            start = cut;
-        }
-        res.Add((start, samples.Length));
-        return res;
-    }
-
-    private static int QuietestCut(float[] samples, int from, int to, int sampleRate)
-    {
-        int frame = Math.Max(1, sampleRate * 30 / 1000), best = to;
-        double low = double.MaxValue;
-        for (int i = from; i + frame <= to; i += frame)
-        {
-            double r = Audio.Rms(samples.AsSpan(i, frame));
-            if (r < low) { low = r; best = i + frame / 2; }
-        }
-        return best;
     }
 
     /// <summary>

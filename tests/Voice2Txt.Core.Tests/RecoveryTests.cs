@@ -119,31 +119,33 @@ public class RecoveryTests
     }
 
     [Fact]
-    public void 窓に収まる発話は1回で復号する()
+    public async Task 復号が途中で返し終えたら_最後の区切りの終わりから続きを復号する()
     {
-        var s = Voice(Recovery.WindowSeconds - 0.5, (0, 10), (11, 28));
-        var w = Assert.Single(Recovery.Windows(s, Recovery.VoicedSpans(s, 0.01)));
-        Assert.Equal((0, s.Length), w);
-    }
-
-    [Fact]
-    public async Task 長い発話は声の間で窓に切り_語の時刻に窓の先頭を足して拾い直しを判定する()
-    {
-        // 70 秒: 2 秒話して 1 秒黙るを繰り返す(区間は 24 個)
+        // 72 秒: 2 秒話して 1 秒黙るを繰り返す(区間は 24 個)
         var parts = Enumerable.Range(0, 24).Select(i => (i * 3.0, i * 3.0 + 2)).ToArray();
         var s = Voice(72, parts);
-        // 偽物の復号は渡された音声の声の区間ごとに 1 語を、その区間の中ほどの時刻(渡された音声の先頭から)で返す
+        // 偽物の復号は、渡された音声の先頭 20 秒に終わる声の区間ごとに 1 区切り(語 1 つ、時刻は区間の中ほど)を返して止まる
         var d = new FakeDecoder
         {
-            Main = slice => [Seg(Recovery.VoicedSpans(slice, 0.01).Select(sp => ((sp.Start + sp.End) / 2.0 / Rate, "語")).ToArray())],
+            Main = slice => Recovery.VoicedSpans(slice, 0.01).Where(sp => sp.End <= 20 * Rate)
+                .Select(sp => new DecodedSegment("語", [new TimedToken((sp.Start + sp.End) / 2.0 / Rate, "語")], (double)sp.End / Rate)).ToList(),
             Span = ("余計な文", 0),
         };
         var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
-        Assert.True(d.MainCalls.Count >= 3);
-        Assert.All(d.MainCalls, c => Assert.True(c.Length <= Recovery.WindowSeconds * Rate));
-        Assert.Equal(s.Length, d.MainCalls.Sum(c => c.Length)); // 切れ目で音声を落とさない
-        Assert.Equal(new string('語', 24), r.Text); // 窓の切れ目で区間が割れない
-        Assert.Empty(d.SpanCalls); // 時刻を窓の先頭からずらし直している
+        Assert.Equal(new string('語', 24), r.Text); // 後ろが消えない・重ならない
+        Assert.True(d.MainCalls.Count >= 4);
+        for (int i = 1; i < d.MainCalls.Count; i++) Assert.True(d.MainCalls[i].Length < d.MainCalls[i - 1].Length);
+        Assert.Empty(d.SpanCalls); // 続きの語の時刻を続きの先頭からずらし直している
+    }
+
+    [Fact]
+    public async Task 返し終えた所より後ろに声が無ければ続けない()
+    {
+        var s = Voice(5, (0, 3), (4.0, 4.2)); // 話し終えた後に短い物音
+        var d = new FakeDecoder { Main = _ => [new DecodedSegment("資料を送ります。", [new TimedToken(1.0, "資料"), new TimedToken(2.8, "送ります。")], 3.0)] };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Equal("資料を送ります。", r.Text);
+        Assert.Single(d.MainCalls);
     }
 
     [Fact]

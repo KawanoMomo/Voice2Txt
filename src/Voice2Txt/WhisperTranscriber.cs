@@ -26,7 +26,8 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
 
     /// <summary>
     /// モデルを読み込む。<paramref name="modelName"/> の語の時刻の当て方(alignment heads)が分かれば DTW を有効にして拾い直しを使う。
-    /// DTW を有効にした whisper.cpp は 30 秒を超える入力の 2 つ目以降の窓を返さないので、長い発話は <see cref="Recovery.Windows"/> で切って渡す。
+    /// DTW を有効にした whisper.cpp は窓を送る途中で返し終えることがある(30 秒前後より長い入力で後ろが黙って消える)ので、
+    /// <see cref="Recovery.TranscribeAsync"/> が最後の区切りの終わりから続きを渡し直す。
     /// </summary>
     public static WhisperTranscriber Load(string modelPath, string? modelName = null, double silenceThreshold = 0.01)
     {
@@ -76,7 +77,7 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
     {
         var res = new List<DecodedSegment>();
         await foreach (var seg in _processor.ProcessAsync(samples, ct))
-            res.Add(new DecodedSegment(seg.Text, seg.Tokens.Select(t => new TimedToken(t.DtwTimestamp < 0 ? -1 : t.DtwTimestamp / 100.0, t.Text ?? "")).ToList()));
+            res.Add(new DecodedSegment(seg.Text, seg.Tokens.Select(t => new TimedToken(t.DtwTimestamp < 0 ? -1 : t.DtwTimestamp / 100.0, t.Text ?? "")).ToList(), seg.End.TotalSeconds));
         return res;
     }
 
