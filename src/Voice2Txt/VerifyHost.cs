@@ -35,6 +35,7 @@ internal sealed class VerifyHost : ApplicationContext
     private TaskCompletionSource _modelReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private SettingsForm? _settingsForm;
     private int _shotNo;
+    private int _seqBase; // restart より前に記録した発話の番号の最大
     private readonly System.Windows.Forms.Timer _fgProbe = new() { Interval = 25 };
     private readonly ModelPrepTracker _prepTrack = new();
     private OverlayState _lastRecorded = OverlayState.Hidden;
@@ -104,7 +105,12 @@ internal sealed class VerifyHost : ApplicationContext
         _ptt = CreatePtt();
         _ptt.InterimEnabled = Backends.InterimAllowed(_engine.Runtime, true);
         await old.DisposeAsync();
-        lock (_result) _result.Restarts++;
+        lock (_result)
+        {
+            _result.Restarts++;
+            // 起動し直すと発話の番号は 1 から振り直す。結果では起動し直す前の続きの番号にする(届いた順と録音した順を台本全体で比べる)
+            _seqBase = _result.Deliveries.Select(d => d.Seq).Concat(_result.Cancellations.Select(c => c.Seq)).DefaultIfEmpty(0).Max();
+        }
         AppLog.Write($"restart talkKey={_talkKey} model={next.Model} modelChanged={modelChanged}");
         if (modelChanged)
         {
@@ -214,11 +220,11 @@ internal sealed class VerifyHost : ApplicationContext
         lock (_result)
         {
             if (r.Outcome is Outcome.Cancelled or Outcome.Failed)
-                _result.Cancellations.Add(new CancelRecord { Seq = r.Seq, Reason = r.Reason.ToString(), HeldMs = r.HeldMs, Error = r.Error });
+                _result.Cancellations.Add(new CancelRecord { Seq = _seqBase + r.Seq, Reason = r.Reason.ToString(), HeldMs = r.HeldMs, Error = r.Error });
             else
                 _result.Deliveries.Add(new DeliveryRecord
                 {
-                    Seq = r.Seq, To = r.Outcome == Outcome.Pasted ? "textbox" : "clipboard", Text = r.Text ?? "",
+                    Seq = _seqBase + r.Seq, To = r.Outcome == Outcome.Pasted ? "textbox" : "clipboard", Text = r.Text ?? "",
                     MicOpenMs = r.MicOpenMs, HeldMs = r.HeldMs, ReleaseToDeliverMs = r.ReleaseToDeliverMs, TranscribeMs = r.TranscribeMs,
                     FillersRemoved = r.FillersRemoved,
                 });

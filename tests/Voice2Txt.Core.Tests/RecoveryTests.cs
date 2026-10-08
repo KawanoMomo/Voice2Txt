@@ -165,6 +165,53 @@ public class RecoveryTests
     }
 
     [Fact]
+    public async Task 残りが1秒未満でも_後ろに結びの声が残れば続きを復号する()
+    {
+        // small の g01: 復号は 29.56 秒で返し終え(残り 0.99 秒)、後ろに 0.45 秒の「以上です」が残る
+        var s = Voice(30.55, (0.15, 28.89), (29.70, 30.15));
+        var d = new FakeDecoder
+        {
+            Main = slice => slice.Length == s.Length
+                ? [new DecodedSegment("共有してもらいます。", [new TimedToken(28.72, "共有してもらいます。")], 29.56)]
+                : [new DecodedSegment("以上です。", [new TimedToken(0.5, "以上です。")], 0.9)],
+        };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Equal("共有してもらいます。以上です。", r.Text);
+        Assert.Equal(2, d.MainCalls.Count);
+        // whisper.cpp は 1 秒未満の入力を復号しないので、続きは後ろを無音で埋めて渡す
+        Assert.True(d.MainCalls[1].Length >= Audio.MinDecodeSeconds * Rate);
+    }
+
+    [Fact]
+    public async Task 返し終えた所が残りの声の途中でも_最後の語より後ろの声から続きを復号する()
+    {
+        // 返し終えた所(30.0 秒)が「以上です」(29.70〜30.15 秒)の途中にある。最後の語は 28.72 秒
+        var s = Voice(30.55, (0.15, 28.89), (29.70, 30.15));
+        var d = new FakeDecoder
+        {
+            Main = slice => slice.Length == s.Length
+                ? [new DecodedSegment("共有してもらいます。", [new TimedToken(28.72, "共有してもらいます。")], 30.0)]
+                : [new DecodedSegment("以上です。", [new TimedToken(0.5, "以上です。")], 0.9)],
+        };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Equal("共有してもらいます。以上です。", r.Text);
+        Assert.Equal(2, d.MainCalls.Count);
+        // 続きは残りの声の手前(余白)から渡す: 声の頭を切らない
+        int firstVoice = Array.FindIndex(d.MainCalls[1], x => x != 0);
+        Assert.InRange(firstVoice / (double)Rate, Recovery.SpanPadSeconds - 0.05, Recovery.SpanPadSeconds + 0.05);
+    }
+
+    [Fact]
+    public async Task 残りが1秒未満で後ろが物音だけなら続けない()
+    {
+        var s = Voice(4.0, (0, 3), (3.5, 3.7)); // 話し終えた後に 0.2 秒の物音、残り 0.6 秒
+        var d = new FakeDecoder { Main = _ => [new DecodedSegment("資料を送ります。", [new TimedToken(1.0, "資料"), new TimedToken(2.8, "送ります。")], 3.4)] };
+        var r = await Recovery.TranscribeAsync(s, 0.01, d, default);
+        Assert.Equal("資料を送ります。", r.Text);
+        Assert.Single(d.MainCalls);
+    }
+
+    [Fact]
     public async Task 返し終えた所の後に短い息継ぎで続く文も続きを復号する()
     {
         var s = Voice(12, (0, 5.0), (5.3, 9.0)); // 文の切れ目の無音は 0.3 秒

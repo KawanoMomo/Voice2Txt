@@ -83,10 +83,13 @@ public sealed class SpanCache(int capacity = SpanCache.DefaultCapacity)
 /// </summary>
 public static class Recovery
 {
-    /// <summary>復号が返し終えた所から後ろにこれ以上の音声が残っていれば、続きを復号する(whisper.cpp 自身も残り 1 秒未満で止める)。</summary>
+    /// <summary>
+    /// 途中経過は、復号が返し終えた所から後ろにこれ以上の音声が残っていれば続きを復号する(whisper.cpp 自身も残り 1 秒未満で止める)。
+    /// 確定版は残りの長さで決めない(残り 1 秒未満に結びの語だけが残ることがある。続きは後ろを無音で埋めて渡す)。
+    /// </summary>
     public const double ContinueSeconds = 1.0;
 
-    /// <summary>続きを復号するのは、返し終えた所(より少し前でもよい: この秒数まで)から始まる声があるときだけ。</summary>
+    /// <summary>続きを復号するのは、文字にした所(より少し前でもよい: この秒数まで)から始まる声があるときだけ。</summary>
     public const double ContinueSlackSeconds = 0.1;
 
     /// <summary>
@@ -136,7 +139,8 @@ public static class Recovery
     public const double HoleRelativeLevel = 0.1;
 
     /// <summary>
-    /// 確定版を作る: 全体を復号し、復号が途中で返し終えたら最後の区切りの終わりから続きを復号してつなぐ(whisper.cpp が窓を送るのと同じ位置)。
+    /// 確定版を作る: 全体を復号し、文字にした所(返し終えた所と最後の語の時刻の早い方)より後ろで始まる声が残っていれば、
+    /// 最後の区切りの終わり(whisper.cpp が窓を送るのと同じ位置。そこが残りの声の途中なら声の少し手前)から続きを復号してつなぐ。
     /// その後、文字の無い声の区間を拾い直して差し込む。声の区間の中で語の時刻が <see cref="HoleSeconds"/> 秒以上の声をまたいで空いた所(語の穴)も
     /// 前後の語の時刻の間を切り出して拾い直し、後ろの語の前に差し込む(日本語の文字を含む結果だけ。途中経過では終わった穴だけ)。
     /// <paramref name="threshold"/> は無音のしきい値(設定値。声の区間は <see cref="Audio.VoiceLevel"/> で決める)。
@@ -150,10 +154,12 @@ public static class Recovery
         var spans = VoicedSpans(samples, level);
         var sb = new StringBuilder();
         var tokens = new List<(int Offset, double At, string Text)>();
+        // 続きの判定は声を短い息継ぎ(ContinuePauseSeconds)で分けた区間で見る
+        var restSpans = prefetch ? spans : VoicedSpans(samples, level, rate, ContinuePauseSeconds);
         int pos = 0;
         while (true)
         {
-            var slice = pos == 0 ? samples : samples[pos..];
+            var slice = pos == 0 ? samples : Tail(samples, pos);
             double end = 0;
             foreach (var seg in await decoder.DecodeAsync(slice, ct))
             {
@@ -168,17 +174,36 @@ public static class Recovery
                 end = Math.Max(end, seg.EndSeconds);
             }
             int next = pos + (int)(end * rate);
-            if (pos > 0 || next < samples.Length - ContinueSeconds * rate)
-                Diag?.Invoke($"decode-pass from={(double)pos / rate:F2} end={(double)next / rate:F2} len={(double)samples.Length / rate:F2} voiceAfter={VoiceAfter(samples, threshold, next):F2}");
-            // 返し終えた・進まない・残りが短いなら続けない。返し終えた所より後ろで始まる声の区間が無ければ(話し終えた後の息・物音・音楽の続きだけ)、
-            // whisper.cpp 自身もそこで止める(続けると「ご視聴ありがとうございました」のような音声に無い文が付く)
-            if (next <= pos || samples.Length - next < ContinueSeconds * rate) break;
-            // 途中経過は写しの末尾が話している途中で切れていて、ほぼ毎回後ろに声が残る。そこで続けると押下中の復号が倍になり、離した時に
-            // 確定版を待たせる。途中経過は従来どおり 0.5 秒以上の声の区間が返し終えた所から始まるときだけ続ける(確定版がやり直すので結びを欠いてもよい)
-            if (prefetch
-                ? !spans.Any(s => s.Start >= next - (int)(ContinueSlackSeconds * rate) && s.End - s.Start >= MinSpanSeconds * rate)
-                : VoiceAfter(samples, threshold, next) < ContinueMinVoiceSeconds) break;
-            pos = next;
+            if (prefetch)
+            {
+                // 途中経過は写しの末尾が話している途中で切れていて、ほぼ毎回後ろに声が残る。そこで続けると押下中の復号が倍になり、離した時に
+                // 確定版を待たせる。途中経過は従来どおり残りが 1 秒以上あり、0.5 秒以上の声の区間が返し終えた所から始まるときだけ続ける
+                // (確定版がやり直すので結びを欠いてもよい)
+                if (pos > 0 || next < samples.Length - ContinueSeconds * rate)
+                    Diag?.Invoke($"decode-pass from={(double)pos / rate:F2} end={(double)next / rate:F2} len={(double)samples.Length / rate:F2}");
+                if (next <= pos || samples.Length - next < ContinueSeconds * rate
+                    || !spans.Any(s => s.Start >= next - (int)(ContinueSlackSeconds * rate) && s.End - s.Start >= MinSpanSeconds * rate)) break;
+                pos = next;
+                continue;
+            }
+            // 確定版: 文字にした所(返し終えた所と、語の時刻が付いた最後の語の早い方)より後ろで始まる声が残っていれば、残りの長さによらず続ける。
+            // 返し終えた位置はモデルごとに違い(残り 1 秒未満で止めるモデルも、声の途中を返し終えた所にするモデルもある)、位置だけでは残りの声を見落とす。
+            // 1 文字も返さなかった(声が無いと判断した)なら続けない
+            if (next <= pos) break;
+            int from = ContinueFrom(tokens.Where(t => t.At >= 0 && IsWord(t.Text)).Select(t => t.At), pos, next, rate);
+            int slack = (int)(ContinueSlackSeconds * rate);
+            var rest = restSpans.Where(s => s.Start >= from - slack).ToList();
+            double restVoice = rest.Sum(s => s.End - s.Start) / (double)rate;
+            if (pos > 0 || next < samples.Length - ContinueSeconds * rate || restVoice > 0)
+                Diag?.Invoke($"decode-pass from={(double)pos / rate:F2} end={(double)next / rate:F2} words={(double)from / rate:F2} len={(double)samples.Length / rate:F2} voiceAfter={restVoice:F2}");
+            // 後ろで始まる声が無い・短い(話し終えた後の息・物音)なら続けない。文字にした所の手前から切れ目なく続く音(話し終えた後も鳴り続ける音楽)は
+            // 数えない(続けると「ご視聴ありがとうございました」のような音声に無い文が付く)
+            if (restVoice < ContinueMinVoiceSeconds) break;
+            // 続きは返し終えた所から(whisper.cpp が窓を送るのと同じ位置)。そこが残りの声の途中なら、声の少し手前(区間の余白)から
+            int start = next <= rest[0].Start ? next : Math.Max(rest[0].Start - (int)(SpanPadSeconds * rate), from);
+            if (start <= pos) start = next;
+            if (start >= samples.Length) break;
+            pos = start;
         }
         string text = sb.ToString();
         var words = tokens.Where(t => t.At >= 0 && IsWord(t.Text)).ToList();
@@ -296,14 +321,25 @@ public static class Recovery
     }
 
     /// <summary>
-    /// 復号が返し終えた所 <paramref name="from"/>(サンプル位置)より後ろで始まる声の長さの合計(秒)。声は <see cref="ContinuePauseSeconds"/> 以上の無音で分け、
-    /// 返し終えた所の手前(<see cref="ContinueSlackSeconds"/> より前)から続いている声は数えない(話し終えた後も鳴り続ける音楽の続きで、音声に無い文を作らない)。
+    /// 確定版の 1 回の復号(<paramref name="pos"/> から渡し、<paramref name="next"/> で返し終えた。どちらもサンプル位置)が文字にした所の終わり:
+    /// 返し終えた所と、この復号が付けた最後の語の時刻(<paramref name="wordTimes"/> は秒。前の復号の語も含んでよい)の早い方。
+    /// 返し終えた所を声の途中に置くモデルでも、最後の語より後ろで始まる声を残りとして数えられる。
     /// </summary>
-    public static double VoiceAfter(float[] samples, double threshold, int from, int sampleRate = Audio.SampleRate)
+    public static int ContinueFrom(IEnumerable<double> wordTimes, int pos, int next, int sampleRate = Audio.SampleRate)
     {
-        int slack = (int)(ContinueSlackSeconds * sampleRate);
-        return VoicedSpans(samples, Audio.VoiceLevel(samples, threshold, sampleRate), sampleRate, ContinuePauseSeconds)
-            .Where(s => s.Start >= from - slack).Sum(s => s.End - s.Start) / (double)sampleRate;
+        double last = wordTimes.Where(t => t * sampleRate >= pos).DefaultIfEmpty(-1).Max();
+        return last < 0 ? next : Math.Min(next, (int)(last * sampleRate));
+    }
+
+    /// <summary>
+    /// <paramref name="from"/> から後ろの音声。<see cref="Audio.MinDecodeSeconds"/> より短ければ後ろを無音で埋める
+    /// (whisper.cpp は 1 秒未満の入力を復号しない。文末の短い結びだけが残る続きも復号できる)。
+    /// </summary>
+    public static float[] Tail(float[] samples, int from, int sampleRate = Audio.SampleRate)
+    {
+        var c = new float[Math.Max(samples.Length - from, (int)(Audio.MinDecodeSeconds * sampleRate))];
+        Array.Copy(samples, from, c, 0, samples.Length - from);
+        return c;
     }
 
     /// <summary>
