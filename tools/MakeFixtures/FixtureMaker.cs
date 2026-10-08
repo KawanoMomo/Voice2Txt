@@ -48,6 +48,7 @@ public static class FixtureMaker
         // 約 33 秒で末尾が短い結び「以上です」(声の芯 0.45 秒ほど)。whisper が 30 秒の窓の手前で返し終え、結びだけが後ろに残る
         ["utt-27"] = "それでは定例の会議を始めます。本日の議題は三つです。一つ目は先週のリリースの振り返り、二つ目は来月の開発計画、三つ目は新しい担当者の割り当てです。まず先週のリリースについて、大きな問題は起きませんでしたが、設定画面の表示崩れが二件報告されています。原因は調査中で、担当は田中さんです。次の会議までに結果を共有してもらいます。以上です。",
         ["utt-28"] = "障害対応の手順の見直しについて報告します。先月の夜間の障害では、連絡が担当者に届くまでに三十分かかりました。連絡網が古いままだったことが原因です。そこで、当番表を新しくし、通知の方法も一本化します。また、対応の記録を残す書式を決め、障害のあとの振り返りを必ず行うことにします。準備は来週中に終える予定です。以上です。",
+        ["utt-29"] = "まず、ゆっくりと確認します。次に、ここから先は一気に読み上げますので、ききのがさないようにしてください。", // Rated: ゆっくり → 早口(速度差)。合成の声は「聞き逃さ」を「ききにがさ」と読むのでかなで書く
     };
 
     /// <summary>無音だけの素材(秒)。無音で押して離したら取り消し、を確かめる。</summary>
@@ -92,6 +93,16 @@ public static class FixtureMaker
         ["utt-24"] = [("ja-JP", VoiceGender.Female, "本日の定例会議では、まず先月の進捗状況について報告します。"), ("ja-JP", VoiceGender.Female, "設計の見直しは予定通り終わり、試作品の組み立ても順調に進んでいます。"), ("ja-JP", VoiceGender.Female, "次に、課題として上がっていた部品の調達遅れについてですが、取引先と相談した結果、来週の前半には納品される見込みです。"), ("ja-JP", VoiceGender.Female, "そのため、検証作業の開始日は当初の計画から二日ほど遅れる可能性があります。"), ("ja-JP", VoiceGender.Female, "ただし、全体の納期には影響がないと考えています。"), ("ja-JP", VoiceGender.Female, "続いて、予算の執行状況を説明します。"), ("ja-JP", VoiceGender.Female, "今月の支出は計画の範囲内に収まっており、追加の費用は発生していません。"), ("ja-JP", VoiceGender.Female, "最後に、来月の予定を確認します。"), ("ja-JP", VoiceGender.Female, "新しい担当者が二人加わるため、最初の一週間は研修に充てる予定です。"), ("ja-JP", VoiceGender.Female, "質問や意見があれば、会議の後でも構いませんので、遠慮なくお知らせください。")],
     };
 
+    /// <summary>
+    /// 文ごとに話す速さ(System.Speech の Rate、-10〜10)を変えて同じ声で続けて読む発話。名前 = 読む順の (Rate, 文)。<see cref="Items"/> の文はこれをつないだもの。
+    /// 早口は Rate +8(約 16 モーラ/秒。人の早口の上限を超える速さ)まで。Rate +10(約 20 モーラ/秒)は large-v3-turbo でも語が別の語になる認識の限界で、
+    /// 復号の前処理・初期プロンプトの有無では変わらない(素材にしない)。
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, (int Rate, string Text)[]> Rated = new Dictionary<string, (int, string)[]>
+    {
+        ["utt-29"] = [(-8, "まず、ゆっくりと確認します。"), (8, "次に、ここから先は一気に読み上げますので、ききのがさないようにしてください。")],
+    };
+
     /// <summary><see cref="Mixed"/> の文と文の間に置く間(秒)。</summary>
     public const double MixedPause = 0.5;
 
@@ -116,7 +127,9 @@ public static class FixtureMaker
             else
             {
                 var pad = Pads.TryGetValue(name, out var p) ? p : (0, 0);
-                said = Mixed.TryGetValue(name, out var parts) ? SpeakMixed(parts, tmp) : Speak(Items[name], tmp, pad.Item1, pad.Item2);
+                said = Mixed.TryGetValue(name, out var parts) ? SpeakMixed(parts, tmp)
+                    : Rated.TryGetValue(name, out var rated) ? SpeakRated(rated, tmp)
+                    : Speak(Items[name], tmp, pad.Item1, pad.Item2);
                 if (Levels.TryGetValue(name, out var lv)) said += $" ({Quiet(tmp, lv.Level, lv.Tail)})";
                 if (Noises.TryGetValue(name, out var nz)) { AddNoise(tmp, nz); said += string.Format(CultureInfo.InvariantCulture, " (雑音 RMS {0})", nz); }
             }
@@ -150,6 +163,21 @@ public static class FixtureMaker
         p.AppendText(text);
         if (tailSec > 0) p.AppendBreak(TimeSpan.FromSeconds(tailSec));
         s.Speak(p);
+        s.SetOutputToNull();
+        return sb.ToString();
+    }
+
+    /// <summary>文ごとに話す速さを変えて、日本語の同じ声で 1 本に続けて読む(<see cref="Rated"/>)。</summary>
+    private static string SpeakRated((int Rate, string Text)[] parts, string wav)
+    {
+        using var s = new SpeechSynthesizer();
+        foreach (var v in s.GetInstalledVoices())
+            if (v.VoiceInfo.Culture.Name == "ja-JP") { s.SelectVoice(v.VoiceInfo.Name); break; }
+        if (s.Voice.Culture.Name != "ja-JP") throw new InvalidOperationException("日本語(ja-JP)の音声合成の声が入っていない(Windows の設定 → 時刻と言語 → 音声 で日本語の音声を追加する)");
+        var sb = new StringBuilder();
+        s.PhonemeReached += (_, e) => sb.Append(e.Phoneme);
+        s.SetOutputToWaveFile(wav, new SpeechAudioFormatInfo(16000, AudioBitsPerSample.Sixteen, AudioChannel.Mono));
+        foreach (var (rate, text) in parts) { s.Rate = rate; s.Speak(text); } // 出力を開いたまま続けて読むと 1 本の wav に続けて書かれる
         s.SetOutputToNull();
         return sb.ToString();
     }
