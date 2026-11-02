@@ -45,6 +45,12 @@ public sealed class AppSettings
     /// <summary>文字起こしのバックエンド: auto(初期値。CUDA → Vulkan → CPU の順に読めるもの)/ cuda / vulkan / cpu(<see cref="Backends"/>)。</summary>
     public string Backend { get; set; } = Backends.Auto;
 
+    /// <summary>
+    /// 速さを優先する(初期値オフ。engine が whisper のとき)。オンなら whisper のエンコーダが読む窓を 30 秒から発話の長さに縮め(<see cref="Decoding.AudioContext"/>)、
+    /// CPU・弱い GPU で離してから届くまでを縮める。誤りが少し増えることがある。
+    /// </summary>
+    public bool PreferSpeed { get; set; }
+
     public static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -85,7 +91,7 @@ public sealed class AppSettings
     {
         TalkKey = o.TalkKey; Engine = o.Engine; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
         AutoStart = o.AutoStart; RemoveFillers = o.RemoveFillers; Fillers = [.. o.Fillers ?? []]; Keywords = [.. o.Keywords ?? []]; ShowInterim = o.ShowInterim;
-        FetchCudaRuntime = o.FetchCudaRuntime; Backend = o.Backend;
+        FetchCudaRuntime = o.FetchCudaRuntime; Backend = o.Backend; PreferSpeed = o.PreferSpeed;
     }
 
     public void Save(string path)

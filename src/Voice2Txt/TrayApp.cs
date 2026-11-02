@@ -148,7 +148,7 @@ internal sealed class TrayApp : ApplicationContext
             _ptt.InterimEnabled = Backends.InterimAllowed(t.Runtime, true); // CPU では途中経過を出さない
             _ptt.SetModelStatus(true);
             var model = Engines.ModelName(_settings);
-            AppLog.Write($"engine-ready engine={(haas ? Engines.Haas : Engines.Whisper)} model={model} runtime={t.Runtime} ms={sw.ElapsedMilliseconds} backend={_settings.Backend} interim={_ptt.InterimEnabled && _settings.ShowInterim}");
+            AppLog.Write($"engine-ready engine={(haas ? Engines.Haas : Engines.Whisper)} model={model} runtime={t.Runtime} ms={sw.ElapsedMilliseconds} backend={_settings.Backend} preferSpeed={_settings.PreferSpeed} interim={_ptt.InterimEnabled && _settings.ShowInterim}");
             var note = haas ? null : Backends.FallbackNote(_settings.Backend, t.Runtime);
             if (cudaNote is not null && !t.Runtime.Equals(Backends.Cuda, StringComparison.OrdinalIgnoreCase))
                 note = note is null ? cudaNote : note + "\n" + cudaNote;
