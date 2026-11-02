@@ -20,8 +20,12 @@ public sealed class VerifyResult
     public string? Backend { get; set; }
     /// <summary>途中経過を出していたか(設定 showInterim がオンでも、CPU で動くときは出さない)。</summary>
     public bool? Interim { get; set; }
-    /// <summary>読み込んだモデルの名前(台本の settings.model を引いた結果)。</summary>
+    /// <summary>読み込んだモデルの名前(台本の settings.model を引いた結果。haas は haas-ja-v1.0)。</summary>
     public string? Model { get; set; }
+    /// <summary>設定 engine(whisper / haas)。</summary>
+    public string? Engine { get; set; }
+    /// <summary>エンジンを用意できなかった理由(トレイの通知と同じ文。用意できれば null)。</summary>
+    public string? EngineError { get; set; }
     public long? ModelReadyMs { get; set; }
     /// <summary>CUDA の実行時ライブラリ: ready(runtime フォルダから読めた)か、CUDA を使えない理由。検証モードは取得しない。</summary>
     public string? CudaRuntime { get; set; }
@@ -252,6 +256,17 @@ public static class Evaluator
         }
         if (e.Model is { } m && !string.Equals(m, r.Model, StringComparison.OrdinalIgnoreCase))
             fails.Add($"モデル {r.Model ?? "(読めていない)"}(期待 {m})");
+        if (e.Engine is { } en && !string.Equals(en, r.Engine, StringComparison.OrdinalIgnoreCase))
+            fails.Add($"エンジン {r.Engine ?? "(無い)"}(期待 {en})");
+        if (e.EngineError is { } ee)
+        {
+            if (ee.Count == 0 && r.EngineError is not null) fails.Add($"エンジンを用意できなかった: {r.EngineError}");
+            foreach (var w in ee.Where(w => r.EngineError is null || !r.EngineError.Contains(w)))
+                fails.Add($"エンジンを用意できなかった理由「{r.EngineError ?? "(無い)"}」に「{w}」が無い");
+        }
+        if (e.TrayTooltip is { } tt)
+            foreach (var w in tt.Where(w => r.TrayTooltip is null || !r.TrayTooltip.Contains(w)))
+                fails.Add($"トレイのツールチップ「{r.TrayTooltip}」に「{w}」が無い");
         if (e.MaxReleaseToDeliverMs is { } max)
             foreach (var d in r.Deliveries.Where(d => d.ReleaseToDeliverMs > max))
                 fails.Add($"{d.Seq} 番の発話: 離してから届くまで {d.ReleaseToDeliverMs} ms(上限 {max})");

@@ -40,10 +40,10 @@ internal static class Program
             var outDir = Arg(args, "--out");
             if (scenario is null || outDir is null)
             {
-                Console.Error.WriteLine("usage: Voice2Txt.exe --verify --scenario <json> --out <dir>");
+                Console.Error.WriteLine("usage: Voice2Txt.exe --verify --scenario <json> --out <dir> [--engine whisper|haas]");
                 return 2;
             }
-            Application.Run(new VerifyHost(scenario, outDir));
+            Application.Run(new VerifyHost(scenario, outDir, Arg(args, "--engine")));
             return 0;
         }
 

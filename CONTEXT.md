@@ -34,10 +34,16 @@ _Avoid_: フィラー, つなぎ言葉, 間投詞
 声の区間の中でも、隣り合う語の間に声が長く続くのに文字が無い所(**語の穴**。読み上げた記号の語を「report.pdf」にまとめて間の語を飛ばした所など)は同じように拾い直す(ログの `holes=`)。
 _Avoid_: 補完, リトライ, 再認識
 
+**エンジン**:
+文字起こしを行うもの。設定 `engine` で選ぶ: `whisper`(初期値。whisper.cpp をアプリに取り込む)/ `haas`(日本語 ASR の Haas-ja-v1.0 を speech.cpp の worker で動かす)。
+`haas` を用意できない(speech.cpp か重みを取得できない・worker が起動しない)ときは Whisper に切り替えず、理由をトレイとログ `engine-error` に出す。使っているものはトレイのツールチップとログ `engine-ready engine=` に出る。
+_Avoid_: 認識器, ASR(画面・設定では使わない)
+
 **バックエンド**:
 文字起こしを実行する whisper.cpp の実行時ライブラリの種類(CUDA / Vulkan / CPU)。起動時に設定 `backend` の順(自動は CUDA → Vulkan → CPU)で読めたものを常駐中ずっと使う。
 CPU では途中経過を出さない。使っているものはトレイのツールチップとログ `engine-ready runtime=` に出る。
-_Avoid_: エンジン(エンジンは whisper.cpp そのもの), デバイス, アクセラレータ
+Haas エンジンでは speech.cpp の `--device`(自動 / GPU(Vulkan)/ CPU)に読み替える(speech.cpp に CUDA は無い)。
+_Avoid_: エンジン(エンジンは whisper.cpp / speech.cpp そのもの), デバイス, アクセラレータ
 
 **オーバーレイ**:
 録音中・処理中・届けた結果を示す、画面に重ねて出す小さな表示。フォーカスを奪わず、クリックを素通りさせる。一番下の**案内の行**(状態の印と本文)は画面上の位置が動かず、途中経過はその上に積む。

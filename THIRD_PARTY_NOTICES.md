@@ -32,6 +32,16 @@ Voice2Txt(MIT、`LICENSE`)が同梱・参照する他者の著作物と、その
   | `cudart64_13.dll` | https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-13.0.96-archive.zip(CUDA Runtime 13.0.96) | `a2ed875f9997aa24904fb70cc9db3acd9308433cde99bc8e63ec1271c9da31b4` |
   | `cublasLt64_13.dll` / `cublas64_13.dll` | https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-13.1.0.3-archive.zip(cuBLAS 13.1.0.3) | `4ac4847bbe4f7709b244956fcfc32197a2954ee70b155cb67eebd9ee26f7e339` |
 
+- **speech.cpp**(`speech.exe` / `speech.dll`、設定 `engine` が `haas` のときだけ)— MIT、Copyright (c) nyosegawa(https://github.com/nyosegawa/speech.cpp)。
+  ggml(MIT、The ggml authors)を含む。配布物には含めない。PATH に `speech.exe` があればそれを使い、無ければアプリが固定の取得元から
+  取得し、SHA-256 を照合してから `%APPDATA%\Voice2Txt\tools\speech\` に展開する(`src/Voice2Txt.Core/SpeechEngine.cs` に固定):
+  https://github.com/nyosegawa/speech.cpp/releases/download/v0.10.1/speech-0.10.1-windows-x64-vulkan.zip
+  (SHA-256 `a8fe0e4b4f463c460e7ace9d38c363bec08b254cac5a7f764b7967af35d4fa1a`)
+- **Haas-ja-v1.0 の重み**(`Haas-616M-ja-v1.0-Q8_0.gguf`、設定 `engine` が `haas` のときだけ)— Apache-2.0、Third Intelligence の Haas-ja-v1.0
+  (https://huggingface.co/third-intelligence/Haas-ja-v1.0)を speech.cpp の GGUF に変換したもの(https://huggingface.co/sakasegawa/Haas-ja-v1.0-GGUF、
+  コミット `6b965d5007ba780585de51549d57a8c1c0d67c7e`)。SHA-256 `cd5f60b2f1c411404b83fca4a65e3ce30a26d9e951b6a346529e65f22758afeb` で検証してから
+  `%APPDATA%\Voice2Txt\models\` に置く。Apache-2.0 の全文は https://www.apache.org/licenses/LICENSE-2.0。
+
 ## 利用者の PC に既にあるものを使う(配布物にもリポジトリにも含めず、取得もしない)
 
 - **Vulkan のローダー**(`vulkan-1.dll`)と GPU のドライバ — Vulkan のバックエンドは、利用者の PC の GPU ドライバが入れたものを読む。

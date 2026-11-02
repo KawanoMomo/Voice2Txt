@@ -54,6 +54,12 @@ public interface ITranscriber
     Task<string> TranscribeInterimAsync(float[] samples16k, CancellationToken ct) => TranscribeAsync(samples16k, null, ct);
 }
 
+/// <summary>読み込んだ文字起こしのエンジン(whisper.cpp か speech.cpp の worker)。<see cref="Runtime"/> は動いている先(Cuda / Vulkan / Cpu)。</summary>
+public interface IEngine : ITranscriber, IDisposable
+{
+    string Runtime { get; }
+}
+
 public interface IClock
 {
     long NowMs { get; }

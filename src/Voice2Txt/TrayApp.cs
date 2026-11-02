@@ -128,22 +128,28 @@ internal sealed class TrayApp : ApplicationContext
                 _overlay.BeginInvoke(() => _tray.ShowBalloonTip(8000, "Voice2Txt", bw, ToolTipIcon.Warning));
             }
             // CUDA の実行時ライブラリは配布物に入れない: CUDA を試す設定なら、無ければ初回に NVIDIA の redist から取得して runtime フォルダに置き、そこから読む
+            if (Engines.InvalidWarning(_settings.Engine) is { } ew)
+            {
+                AppLog.Write($"engine-invalid value={_settings.Engine} fallback={Engines.Whisper}");
+                _overlay.BeginInvoke(() => _tray.ShowBalloonTip(8000, "Voice2Txt", ew, ToolTipIcon.Warning));
+            }
+            bool haas = Engines.IsHaas(_settings.Engine);
             string? cudaNote = null;
-            if (Backends.NeedsCudaRuntime(_settings.Backend))
+            if (!haas && Backends.NeedsCudaRuntime(_settings.Backend)) // speech.cpp(haas)は CUDA を使わない
                 cudaNote = await CudaRuntimeLoader.PrepareAsync(
                     new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), _settings.FetchCudaRuntime, Progress, _cts.Token);
             var t = await EngineLoader.LoadAsync(_settings, ModelCatalog.DefaultModelsDirectory, Progress, _cts.Token);
             _engine.Set(t);
             _ptt.InterimEnabled = Backends.InterimAllowed(t.Runtime, true); // CPU では途中経過を出さない
             _ptt.SetModelStatus(true);
-            var model = ModelCatalog.Get(_settings.Model).Name;
-            AppLog.Write($"engine-ready model={model} runtime={t.Runtime} ms={sw.ElapsedMilliseconds} backend={_settings.Backend} interim={_ptt.InterimEnabled && _settings.ShowInterim}");
-            var note = Backends.FallbackNote(_settings.Backend, t.Runtime);
+            var model = Engines.ModelName(_settings);
+            AppLog.Write($"engine-ready engine={(haas ? Engines.Haas : Engines.Whisper)} model={model} runtime={t.Runtime} ms={sw.ElapsedMilliseconds} backend={_settings.Backend} interim={_ptt.InterimEnabled && _settings.ShowInterim}");
+            var note = haas ? null : Backends.FallbackNote(_settings.Backend, t.Runtime);
             if (cudaNote is not null && !t.Runtime.Equals(Backends.Cuda, StringComparison.OrdinalIgnoreCase))
                 note = note is null ? cudaNote : note + "\n" + cudaNote;
             _overlay.BeginInvoke(() =>
             {
-                _tray.Text = AppVersion.TrayText(Backends.IdleTrayStatus(model, t.Runtime));
+                _tray.Text = AppVersion.TrayText(Engines.IdleTrayStatus(_settings.Engine, model, t.Runtime));
                 _tray.Icon = TrayIcons.Idle;
                 if (note is not null) _tray.ShowBalloonTip(5000, "Voice2Txt", note, ToolTipIcon.Info);
             });
@@ -151,10 +157,12 @@ internal sealed class TrayApp : ApplicationContext
         catch (Exception ex)
         {
             AppLog.Write("engine-error " + ex.Message);
+            _ptt.SetModelStatus(false, Engines.FailedTrayStatus(_settings.Engine)); // 押したときのオーバーレイにも用意できない理由の要点を出す
             _overlay.BeginInvoke(() =>
             {
-                _tray.Text = AppVersion.TrayText("モデルを用意できません");
-                _tray.ShowBalloonTip(5000, "Voice2Txt", "モデルを用意できませんでした: " + ex.Message, ToolTipIcon.Error);
+                _tray.Text = AppVersion.TrayText(Engines.FailedTrayStatus(_settings.Engine));
+                _tray.ShowBalloonTip(Engines.IsHaas(_settings.Engine) ? 15000 : 5000, "Voice2Txt",
+                    (ex is EngineUnavailableException ? "" : "モデルを用意できませんでした: ") + ex.Message, ToolTipIcon.Error);
             });
         }
     }
@@ -203,10 +211,10 @@ internal sealed class TrayApp : ApplicationContext
 /// <summary>モデルの読み込みが終わるまでの仮の受け口(読み込み後に本物へ委ねる)。</summary>
 internal sealed class DeferredTranscriber : ITranscriber, IDisposable
 {
-    private WhisperTranscriber? _inner;
+    private IEngine? _inner;
     public string? Runtime => _inner?.Runtime;
     /// <summary>読み込んだエンジンに委ねる(読み込み直したときは前のものを片付ける)。</summary>
-    public void Set(WhisperTranscriber t)
+    public void Set(IEngine t)
     {
         var old = _inner;
         _inner = t;
