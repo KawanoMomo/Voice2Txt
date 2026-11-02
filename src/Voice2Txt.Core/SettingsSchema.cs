@@ -44,6 +44,8 @@ public static class SettingsSchema
     [
         new("talkKey", "トークキー", "押している間だけ録音し、離すと文字起こしして貼り付けるキー。押している間に他のキーを押すと取り消しになり、そのキーとの組み合わせ(例 右Ctrl+C)として送られます。",
             SettingKind.Choice, TalkKeyChoices),
+        new("engine", "エンジン", "文字起こしのエンジン。Whisper(既定)か、日本語専用の Haas-ja-v1.0(speech.cpp で動かす。初回に speech.cpp と重み 0.66 GB を取得)。Haas を用意できないときは Whisper に切り替えず、理由をトレイに出します。",
+            SettingKind.Choice, Engines.Choices),
         new("model", "モデル", "文字起こしに使う Whisper のモデル。大きいほど正確で、用意(初回のダウンロード)と処理に時間がかかります。",
             SettingKind.Choice, ModelChoices),
         new("backend", "バックエンド", "文字起こしに使う GPU / CPU。自動は CUDA(NVIDIA)→ Vulkan(GPU 全般)→ CPU の順に使えるものを選びます。選んだものを使えなければ CPU で動きます(CPU では途中経過を出しません)。",
@@ -72,6 +74,7 @@ public static class SettingsSchema
     public static string Read(AppSettings s, string key) => Get(key).Key switch
     {
         "talkKey" => s.TalkKey,
+        "engine" => s.Engine,
         "model" => s.Model,
         "backend" => s.Backend,
         "minPressSeconds" => s.MinPressSeconds.ToString(CultureInfo.InvariantCulture),
@@ -108,6 +111,12 @@ public static class SettingsSchema
                 if (c is not null) { s.Model = c.Value; return null; }
                 if (ModelCatalog.TryGet(v, out var e)) { s.Model = e.Name; return null; }
                 return $"モデル「{v}」は選べません(選べるモデル: {ModelCatalog.Names})";
+            }
+            case "engine":
+            {
+                if (Engines.Normalize(v) is { } en && v.Length > 0) { s.Engine = en; return null; }
+                if (v.Length > 0 && string.Equals(v, s.Engine, StringComparison.OrdinalIgnoreCase)) return null;
+                return $"エンジン「{v}」は選べません(選べるもの: {string.Join("、", Engines.Choices.Select(x => x.Label))})";
             }
             case "backend":
             {

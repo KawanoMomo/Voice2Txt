@@ -9,7 +9,10 @@ public sealed class AppSettings
     /// <summary>トークキー。System.Windows.Forms.Keys の名前(例: RControlKey, RMenu)。</summary>
     public string TalkKey { get; set; } = "RControlKey";
 
-    /// <summary>モデル名(ModelCatalog のキー)。</summary>
+    /// <summary>文字起こしのエンジン: whisper(初期値。無くても同じ)/ haas(Haas-ja-v1.0 を speech.cpp で。<see cref="Engines"/>)。</summary>
+    public string Engine { get; set; } = Engines.Whisper;
+
+    /// <summary>モデル名(ModelCatalog のキー。engine が whisper のとき)。</summary>
     public string Model { get; set; } = ModelCatalog.DefaultName;
 
     /// <summary>これより短い押下は取り消し(秒)。</summary>
@@ -74,7 +77,7 @@ public sealed class AppSettings
     /// <summary>o の値をすべて写す(設定画面で保存した値を、動いている側の設定にも揃える)。</summary>
     public void CopyFrom(AppSettings o)
     {
-        TalkKey = o.TalkKey; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
+        TalkKey = o.TalkKey; Engine = o.Engine; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
         AutoStart = o.AutoStart; RemoveFillers = o.RemoveFillers; Fillers = [.. o.Fillers ?? []]; ShowInterim = o.ShowInterim;
         FetchCudaRuntime = o.FetchCudaRuntime; Backend = o.Backend;
     }

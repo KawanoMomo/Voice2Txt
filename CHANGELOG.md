@@ -1,5 +1,6 @@
 # CHANGELOG
 
+- BLK-human-20261102-1015-1: 設定 `engine` に `haas` を足し、日本語 ASR の Haas-ja-v1.0 を speech.cpp の worker(常駐、JSON Lines)で動かして文字起こしできる(既定は今までどおり `whisper`)。speech.cpp(PATH → 無ければ release を SHA-256 で確かめて取得)と重み(Q8_0、0.66 GB)を初回に用意し、トレイに「待機中(エンジン haas、モデル haas-ja-v1.0、Vulkan)」。用意できないときは Whisper に切り替えず「Haas エンジンを用意できません」と理由を通知とログに出す。設定画面に「エンジン」、検証モードに `--engine`(同じ台本を両エンジンで比べる)・`speechTool: unreachable`・`waitModelFailed`
 ## v1.0
 
 - メジャー v1.0(β: 実機受け入れ 未)。v0.1〜v0.8 の変更を束ねる。詳細は loop/releases/v1.0.md

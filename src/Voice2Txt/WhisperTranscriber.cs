@@ -9,7 +9,7 @@ namespace Voice2Txt;
 /// whisper.cpp(Whisper.net)をプロセス内に取り込む。日本語固定。バックエンドは設定 backend の順(auto: CUDA → Vulkan → CPU)に試す。
 /// 語の時刻(DTW)を出せるモデルでは、確定版の文字が無い声の区間を拾い直す(<see cref="Recovery"/>)。
 /// </summary>
-internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposable
+internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
 {
     private readonly WhisperFactory _factory;
     private readonly WhisperProcessor _processor;
@@ -118,13 +118,15 @@ internal sealed class WhisperTranscriber : ITranscriber, ISpanDecoder, IDisposab
     }
 }
 
-/// <summary>モデルを用意して読み込む(起動時に 1 回。常駐中は読み込んだまま)。</summary>
+/// <summary>エンジンとモデルを用意して読み込む(起動時に 1 回。常駐中は読み込んだまま)。engine が haas なら speech.cpp の worker(<see cref="SpeechEngineLoader"/>)。</summary>
 internal static class EngineLoader
 {
     /// <param name="prov">モデルの用意に使うもの(検証モードが取得元を差し替える)。省略時は <paramref name="modelsDir"/> の本物。</param>
-    public static async Task<WhisperTranscriber> LoadAsync(AppSettings s, string modelsDir, Action<string> onProgress, CancellationToken ct,
-        ModelProvisioner? prov = null)
+    /// <param name="tools">haas のとき speech.cpp の用意に使うもの(検証モードが取得元を差し替える)。省略時は本物。</param>
+    public static async Task<IEngine> LoadAsync(AppSettings s, string modelsDir, Action<string> onProgress, CancellationToken ct,
+        ModelProvisioner? prov = null, SpeechToolProvisioner? tools = null)
     {
+        if (Engines.IsHaas(s.Engine)) return await SpeechEngineLoader.LoadAsync(s, modelsDir, onProgress, ct, tools, prov);
         var entry = ModelCatalog.Get(s.Model);
         prov ??= new ModelProvisioner(modelsDir);
         var last = -1;

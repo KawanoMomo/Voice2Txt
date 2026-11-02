@@ -42,7 +42,8 @@ internal sealed class VerifyHost : ApplicationContext
     private string? _lastPrepMilestone;
     private string? _fetchDir; // modelPrep = download で取得したモデルを置くフォルダ(終わったら消す)
 
-    public VerifyHost(string scenarioPath, string outDir)
+    /// <param name="engine">台本の settings.engine に重ねるエンジン(--engine。同じ台本を whisper と haas で比べる)。null なら台本どおり。</param>
+    public VerifyHost(string scenarioPath, string outDir, string? engine = null)
     {
         _scenarioPath = scenarioPath;
         _sc = Scenario.Load(scenarioPath);
@@ -53,6 +54,7 @@ internal sealed class VerifyHost : ApplicationContext
         AppLog.Path = Path.Combine(_out, "verify.log");
         _result = new VerifyResult { Scenario = _sc.Name, Version = AppVersion.Tag(AppVersion.Current), TrayTooltip = AppVersion.TrayText("モデル準備中") };
         _settings = _sc.Settings ?? new AppSettings();
+        if (engine is not null) _settings.Engine = engine;
         (_talkKey, _keys) = TalkKeyOf(_settings);
 
         _textForm = new VerifyTextForm();
@@ -98,7 +100,8 @@ internal sealed class VerifyHost : ApplicationContext
         var old = _ptt;
         var next = AppSettings.LoadOrCreate(_settingsPath);
         bool modelChanged = !string.Equals(ModelCatalog.TryGet(next.Model, out var a) ? a.Name : next.Model,
-                                           ModelCatalog.TryGet(_settings.Model, out var b) ? b.Name : _settings.Model, StringComparison.OrdinalIgnoreCase);
+                                           ModelCatalog.TryGet(_settings.Model, out var b) ? b.Name : _settings.Model, StringComparison.OrdinalIgnoreCase)
+                            || Engines.IsHaas(next.Engine) != Engines.IsHaas(_settings.Engine); // エンジンが変わっても読み込み直す
         _settings = next;
         (_talkKey, _keys) = TalkKeyOf(next);
         _overlay.Invoke(() => _overlay.SetTalkKeyName(TalkKeys.DisplayName(_talkKey)));
@@ -252,6 +255,7 @@ internal sealed class VerifyHost : ApplicationContext
         });
         AppLog.Write($"done completed={_result.Completed} error={_result.Error}");
         await _ptt.DisposeAsync();
+        _engine.Dispose(); // haas の worker を止める(stdin を閉じれば自分で終わる)
         if (_fetchDir is not null)
             try { Directory.Delete(_fetchDir, true); }
             catch (Exception ex) { AppLog.Write("model-prep cleanup-error " + ex.Message); }
@@ -270,9 +274,17 @@ internal sealed class VerifyHost : ApplicationContext
                 lock (_result) _result.Warnings.Add(bw);
                 AppLog.Write($"backend-invalid value={_settings.Backend} fallback={Backends.Auto}");
             }
+            if (Engines.InvalidWarning(_settings.Engine) is { } ew)
+            {
+                lock (_result) _result.Warnings.Add(ew);
+                AppLog.Write($"engine-invalid value={_settings.Engine} fallback={Engines.Whisper}");
+            }
+            bool haas = Engines.IsHaas(_settings.Engine);
+            lock (_result) _result.Engine = haas ? Engines.Haas : Engines.Whisper;
             // 検証モードは CUDA の実行時ライブラリを取得しない(取得済みの runtime フォルダがあればそれを読み、無ければ次のバックエンド)。
-            // CUDA を試さない設定(vulkan / cpu)なら読みもしない(常駐時と同じ)
-            var cudaNote = Backends.NeedsCudaRuntime(_settings.Backend)
+            // CUDA を試さない設定(vulkan / cpu)と haas(speech.cpp は CUDA を使わない)なら読みもしない(常駐時と同じ)
+            var cudaNote = haas ? "speech.cpp は CUDA を使いません"
+                : Backends.NeedsCudaRuntime(_settings.Backend)
                 ? await CudaRuntimeLoader.PrepareAsync(
                     new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), fetch: false, ModelProgress, CancellationToken.None)
                 : "CUDA を試さない設定です";
@@ -292,21 +304,34 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 default: throw new InvalidDataException($"modelPrep を読めない: {_sc.ModelPrep}(download のみ)");
             }
-            var t = await EngineLoader.LoadAsync(_settings, dir, ModelProgress, CancellationToken.None, prov);
+            SpeechToolProvisioner? tools = _sc.SpeechTool switch
+            {
+                null => null,
+                // 取得元に届かない: PATH を見ず、空の置き場から取得を試みて失敗する(ネットに出ない)
+                "unreachable" => new SpeechToolProvisioner(Path.Combine(_out, "tools"),
+                    new HttpClient(new LocalModelSourceHandler(Path.Combine(_out, "tools", "unreachable"), 0)), () => null),
+                _ => throw new InvalidDataException($"speechTool を読めない: {_sc.SpeechTool}(unreachable のみ)"),
+            };
+            var t = await EngineLoader.LoadAsync(_settings, dir, ModelProgress, CancellationToken.None, prov, tools);
             _engine.Set(t);
             _result.ModelReadyMs = _sw.ElapsedMilliseconds;
             _result.Runtime = t.Runtime;
-            _result.Model = ModelCatalog.Get(_settings.Model).Name;
-            lock (_result) _result.TrayTooltip = AppVersion.TrayText(Backends.IdleTrayStatus(_result.Model, t.Runtime)); // 常駐時と同じ文言
+            _result.Model = Engines.ModelName(_settings);
+            lock (_result) _result.TrayTooltip = AppVersion.TrayText(Engines.IdleTrayStatus(_settings.Engine, _result.Model, t.Runtime)); // 常駐時と同じ文言
             _ptt.InterimEnabled = Backends.InterimAllowed(t.Runtime, true); // CPU では途中経過を出さない(常駐時と同じ)
             lock (_result) _result.Interim = _ptt.InterimEnabled && _settings.ShowInterim;
-            AppLog.Write($"engine-ready model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds} backend={_settings.Backend} interim={_result.Interim}");
+            AppLog.Write($"engine-ready engine={_result.Engine} model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds} backend={_settings.Backend} interim={_result.Interim}");
             _ptt.SetModelStatus(true);
             _modelReady.TrySetResult();
         }
         catch (Exception ex)
         {
             AppLog.Write("engine-error " + ex.Message);
+            lock (_result)
+            {
+                _result.EngineError = ex.Message;
+                _result.TrayTooltip = AppVersion.TrayText(Engines.FailedTrayStatus(_settings.Engine)); // 常駐時と同じ文言
+            }
             _modelReady.TrySetException(ex);
         }
     }
@@ -341,6 +366,12 @@ internal sealed class VerifyHost : ApplicationContext
                     var w = await Task.WhenAny(_modelReady.Task, Task.Delay(a.TimeoutMs ?? 600_000));
                     if (w != _modelReady.Task) throw new TimeoutException("モデルの用意が終わらない");
                     await _modelReady.Task;
+                    break;
+                case "waitModelFailed":
+                    // エンジンを用意できずに終わるのを待つ(取得失敗の知らせを確かめる)。用意できてしまえば台本の誤り
+                    var wf = await Task.WhenAny(_modelReady.Task, Task.Delay(a.TimeoutMs ?? 600_000));
+                    if (wf != _modelReady.Task) throw new TimeoutException("エンジンの用意が終わらない");
+                    if (_modelReady.Task.IsCompletedSuccessfully) throw new InvalidOperationException("エンジンを用意できてしまった(waitModelFailed)");
                     break;
                 case "press":
                     _recorder.NextAudio = a.Audio is null ? [] : Audio.ReadWav16kMono(Scenario.ResolvePath(_scenarioPath, a.Audio));

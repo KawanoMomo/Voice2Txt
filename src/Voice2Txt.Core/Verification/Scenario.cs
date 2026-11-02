@@ -30,6 +30,12 @@ public sealed class Scenario
     /// <summary>modelPrep = download の取得にかける時間(ms)。</summary>
     public int ModelFetchMs { get; set; } = 5000;
 
+    /// <summary>
+    /// engine = haas の speech.cpp をどこから用意するか。省略時は本物(PATH → 取得済みの置き場 → release の取得)。
+    /// "unreachable": PATH を見ず、置き場を &lt;out&gt;/tools(空)にし、取得元に届かない(ネットに出ない)。取得に失敗したときの知らせを確かめる。
+    /// </summary>
+    public string? SpeechTool { get; set; }
+
     public List<ScenarioAction> Actions { get; set; } = [];
     public Expectation Expect { get; set; } = new();
 
@@ -111,6 +117,15 @@ public sealed class Expectation
 
     /// <summary>読み込めていなければならないモデルの名前(ModelCatalog の名前)。</summary>
     public string? Model { get; set; }
+
+    /// <summary>動いたエンジン(whisper / haas)。用意できなかったときも設定のエンジン。</summary>
+    public string? Engine { get; set; }
+
+    /// <summary>エンジンを用意できなかった理由に含まれていなければならない語(空配列なら用意できたこと)。</summary>
+    public List<string>? EngineError { get; set; }
+
+    /// <summary>最後のトレイのツールチップに含まれていなければならない語。</summary>
+    public List<string>? TrayTooltip { get; set; }
 
     /// <summary>操作中のアプリへ素通ししたキーの列("RControlKey down" の形。順序どおり。空配列なら素通し無し)。</summary>
     public List<string>? PassedKeys { get; set; }
