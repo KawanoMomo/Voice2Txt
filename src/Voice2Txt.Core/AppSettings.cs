@@ -30,6 +30,12 @@ public sealed class AppSettings
     /// <summary>取り除く言い淀みの語(かな。カタカナで書かれたものも同じ語として扱う)。2 文字の語は前後が区切りのときだけ取り除く。</summary>
     public List<string> Fillers { get; set; } = [.. Core.Fillers.DefaultWords];
 
+    /// <summary>
+    /// カスタム語彙(engine が haas のときだけ。speech.cpp の keywords)。1 つの語は「表記」か「表記=読み,読み」(例 Haas=ハース)。
+    /// 空なら渡さない。読めない語は渡さずに知らせる(<see cref="HaasKeywords"/>)。
+    /// </summary>
+    public List<string> Keywords { get; set; } = [];
+
     /// <summary>押下中、それまでの音声の暫定の文字起こし(途中経過)をオーバーレイに出す(初期値オン)。操作中のアプリには書き込まない。</summary>
     public bool ShowInterim { get; set; } = true;
 
@@ -78,7 +84,7 @@ public sealed class AppSettings
     public void CopyFrom(AppSettings o)
     {
         TalkKey = o.TalkKey; Engine = o.Engine; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
-        AutoStart = o.AutoStart; RemoveFillers = o.RemoveFillers; Fillers = [.. o.Fillers ?? []]; ShowInterim = o.ShowInterim;
+        AutoStart = o.AutoStart; RemoveFillers = o.RemoveFillers; Fillers = [.. o.Fillers ?? []]; Keywords = [.. o.Keywords ?? []]; ShowInterim = o.ShowInterim;
         FetchCudaRuntime = o.FetchCudaRuntime; Backend = o.Backend;
     }
 

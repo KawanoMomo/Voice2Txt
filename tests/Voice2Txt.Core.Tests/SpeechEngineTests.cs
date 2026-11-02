@@ -274,7 +274,7 @@ public class SpeechEngineTests : IDisposable
         var tools = new SpeechToolProvisioner(Path.Combine(_dir, "tools"), new HttpClient(new Server([])), () => null);
         var ex = await Assert.ThrowsAsync<EngineUnavailableException>(() => SpeechEngineLoader.LoadAsync(
             new AppSettings { Engine = "haas" }, Path.Combine(_dir, "models"), _ => { }, CancellationToken.None, tools, LocalModel(),
-            (_, _, _, _) => throw new InvalidOperationException("起動してはならない")));
+            (_, _, _, _, _) => throw new InvalidOperationException("起動してはならない")));
         Assert.Contains("speech.cpp を用意できません", ex.Message);
         Assert.Contains("Whisper には切り替えません", ex.Message);
     }
@@ -301,15 +301,16 @@ public class SpeechEngineTests : IDisposable
         var fi = new FileInfo(Path.Combine(models, entry.FileName));
         File.WriteAllText(Path.Combine(models, entry.FileName) + ".verified", $"{fi.Length}:{fi.LastWriteTimeUtc.Ticks}:{entry.Sha256}");
         var engine = new FakeEngine();
-        string? gotExe = null, gotModel = null, gotDevice = null;
+        string? gotExe = null, gotModel = null, gotDevice = null, gotKeywords = "unset";
         var progress = new List<string>();
-        var t = await SpeechEngineLoader.LoadAsync(new AppSettings { Engine = "haas", Backend = "cpu" }, models, progress.Add, CancellationToken.None,
+        var t = await SpeechEngineLoader.LoadAsync(new AppSettings { Engine = "haas", Backend = "cpu", Keywords = ["Haas = ハース , ハウス", "AIモデル", "bad=", ""] }, models, progress.Add, CancellationToken.None,
             new SpeechToolProvisioner(Path.Combine(_dir, "tools"), null, () => @"C:\bin\speech.exe"), new ModelProvisioner(models, new HttpClient(server)),
-            (exe, model, device, _) => { gotExe = exe; gotModel = model; gotDevice = device; return Task.FromResult<IEngine>(engine); });
+            (exe, model, device, kw, _) => { gotExe = exe; gotModel = model; gotDevice = device; gotKeywords = kw; return Task.FromResult<IEngine>(engine); });
         Assert.Same(engine, t);
         Assert.Equal(@"C:\bin\speech.exe", gotExe);
         Assert.Equal(Path.Combine(models, entry.FileName), gotModel);
         Assert.Equal("cpu", gotDevice);
+        Assert.Equal("Haas=ハース,ハウス\nAIモデル", gotKeywords); // 読めない語は渡さない
         Assert.Equal(1, engine.Calls); // 暖機
         Assert.Equal(["読み込み", "暖機"], progress.TakeLast(2));
         Assert.Equal(0, server.Requests);
@@ -327,8 +328,65 @@ public class SpeechEngineTests : IDisposable
         var ex = await Assert.ThrowsAsync<EngineUnavailableException>(() => SpeechEngineLoader.LoadAsync(
             new AppSettings { Engine = "haas" }, models, _ => { }, CancellationToken.None,
             new SpeechToolProvisioner(Path.Combine(_dir, "tools"), null, () => @"C:\bin\speech.exe"), new ModelProvisioner(models),
-            (_, _, _, _) => throw new SpeechWorkerException("speech worker を起動できない: no Vulkan")));
+            (_, _, _, _, _) => throw new SpeechWorkerException("speech worker を起動できない: no Vulkan")));
         Assert.Contains("worker を起動できません", ex.Message);
         Assert.Contains("no Vulkan", ex.Message);
+    }
+
+    // ---- カスタム語彙(BLK-human-20261102-1015-2)----
+
+    [Theory]
+    [InlineData("Haas", "Haas")]
+    [InlineData(" Haas = ハース , ハウス ", "Haas=ハース,ハウス")]
+    [InlineData("Third Intelligence=サードインテリジェンス", "Third Intelligence=サードインテリジェンス")]
+    [InlineData("=ハース", null)]
+    [InlineData("Haas=", null)]
+    [InlineData("Haas=ハース,", null)]
+    [InlineData("a=b=c", null)]
+    [InlineData("  ", null)]
+    public void Keywords_Normalize(string word, string? expected) => Assert.Equal(expected, HaasKeywords.Normalize(word));
+
+    [Fact]
+    public void Keywords_JoinOnePerLine_EmptyIsNull()
+    {
+        Assert.Null(HaasKeywords.Join(null));
+        Assert.Null(HaasKeywords.Join([]));
+        Assert.Null(HaasKeywords.Join(["=x"]));
+        Assert.Equal("Haas=ハース\nnyosegawa=ニョセガワ", HaasKeywords.Join(["Haas=ハース", "nyosegawa=ニョセガワ", "Haas=ハース"]));
+        Assert.Null(HaasKeywords.InvalidWarning(["Haas=ハース"]));
+        Assert.Contains("「a=b=c」", HaasKeywords.InvalidWarning(["Haas", "a=b=c"]));
+    }
+
+    [Fact]
+    public void Keywords_SettingsScreen_KeepsReadingCommasAndInnerSpaces()
+    {
+        var s = new AppSettings();
+        Assert.Empty(s.Keywords);
+        Assert.Null(SettingsSchema.Apply(s, "keywords", "Haas=ハース,ハウス、Third Intelligence、ニョセガワ"));
+        Assert.Equal(["Haas=ハース,ハウス", "Third Intelligence", "ニョセガワ"], s.Keywords);
+        Assert.Equal("Haas=ハース,ハウス、Third Intelligence、ニョセガワ", SettingsSchema.Read(s, "keywords"));
+        Assert.Contains("読めない", SettingsSchema.Apply(s, "keywords", "Haas="));
+        Assert.Equal(3, s.Keywords.Count); // 読めなければ変えない
+        Assert.Null(SettingsSchema.Apply(s, "keywords", ""));
+        Assert.Empty(s.Keywords);
+        var copy = new AppSettings(); copy.CopyFrom(new AppSettings { Keywords = ["Haas"] });
+        Assert.Equal(["Haas"], copy.Keywords);
+        var fromFile = JsonSerializer.Deserialize<AppSettings>("""{"engine":"haas"}""", AppSettings.Json)!;
+        Assert.Empty(fromFile.Keywords);
+    }
+
+    [Fact]
+    public async Task Keywords_SentOnTranscribeOnlyWhenGiven()
+    {
+        var input = new StringWriter();
+        var c = new SpeechWorkerClient(input, new StringReader(
+            """{"type":"end","id":"r1","text":"Haas"}""" + "\n" + """{"type":"end","id":"r2","text":"ハース"}""" + "\n"));
+        await c.TranscribeAsync(new float[100], CancellationToken.None, "Haas=ハース\nAIモデル");
+        await c.TranscribeAsync(new float[100], CancellationToken.None);
+        var tx = input.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => JsonNode.Parse(l)!.AsObject())
+            .Where(o => (string)o["type"]! == "transcribe").ToList();
+        Assert.Equal("Haas=ハース\nAIモデル", (string)tx[0]["keywords"]!);
+        Assert.False(tx[1].ContainsKey("keywords"));
+        Assert.False(tx[0].ContainsKey("timestamps")); // keywords と timestamps は併用できない
     }
 }

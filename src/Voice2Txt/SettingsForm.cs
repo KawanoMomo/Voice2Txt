@@ -34,9 +34,10 @@ internal sealed class SettingsForm : Form
         Padding = new Padding(12);
         AcceptButton = _save; CancelButton = _cancel;
 
-        var grid = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(0, 0, 0, 8) };
+        // 説明の列を広く取り、項目が増えても画面の高さに収まるようにする(収まらなければ項目の欄だけ縦に送る)
+        var grid = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Location = Point.Empty, Padding = new Padding(0, 0, 0, 8) };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 380));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, DescWidth));
         foreach (var item in SettingsSchema.Items)
         {
             var name = new Label { Text = item.Label, AutoSize = true, Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, 8, 8, 0) };
@@ -44,7 +45,7 @@ internal sealed class SettingsForm : Form
             input.Name = item.Key;
             input.Margin = new Padding(0, 4, 0, 0);
             _inputs[item.Key] = input;
-            var desc = new Label { Text = item.Description, AutoSize = true, ForeColor = SystemColors.GrayText, MaximumSize = new Size(380, 0), Margin = new Padding(0, 2, 0, 6) };
+            var desc = new Label { Text = item.Description, AutoSize = true, ForeColor = SystemColors.GrayText, MaximumSize = new Size(DescWidth, 0), Margin = new Padding(0, 2, 0, 6) };
             grid.Controls.Add(name, 0, grid.RowCount);
             grid.Controls.Add(input, 1, grid.RowCount);
             grid.RowCount++;
@@ -56,7 +57,7 @@ internal sealed class SettingsForm : Form
         var note = new Label
         {
             Text = $"保存すると {_path} に書きます(このファイルを手で直しても構いません)。トークキー・モデルなどは再起動で効きます。",
-            AutoSize = true, MaximumSize = new Size(570, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 4, 0, 4),
+            AutoSize = true, MaximumSize = new Size(190 + DescWidth, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(0, 4, 0, 4),
         };
         var openFile = new LinkLabel { Text = "設定ファイルを開く", AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
         openFile.LinkClicked += (_, _) => Process.Start(new ProcessStartInfo("notepad.exe", $"\"{_path}\"") { UseShellExecute = true });
@@ -66,10 +67,22 @@ internal sealed class SettingsForm : Form
         _save.Click += (_, _) => Save();
         _cancel.Click += (_, _) => Close();
 
+        var items = new Panel { AutoScroll = true, Margin = Padding.Empty };
+        items.Controls.Add(grid);
         var stack = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false };
-        stack.Controls.AddRange([grid, note, openFile, _error, buttons]);
+        stack.Controls.AddRange([items, note, openFile, _error, buttons]);
         Controls.Add(stack);
+        // 項目の欄の高さ: 全部が見える高さ。画面の作業領域に収まらなければ、注記・ボタンの分を残して縦に送る
+        var pref = grid.GetPreferredSize(Size.Empty);
+        int maxH = Math.Max(300, (Screen.PrimaryScreen?.WorkingArea.Height ?? 1000) - ReservedHeight);
+        items.Size = pref.Height <= maxH ? pref : new Size(pref.Width + SystemInformation.VerticalScrollBarWidth, maxH);
     }
+
+    /// <summary>説明の列の幅(px)。</summary>
+    private const int DescWidth = 520;
+
+    /// <summary>項目の欄の下の注記・リンク・ボタンと、枠・題の分として残す高さ(px)。</summary>
+    private const int ReservedHeight = 185;
 
     private static Control MakeInput(SettingItem item, string value)
     {

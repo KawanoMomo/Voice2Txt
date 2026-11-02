@@ -60,6 +60,8 @@ public static class SettingsSchema
             SettingKind.Toggle),
         new("fillers", "取り除く言い淀み", "取り除く語を読点(、)か空白で区切って並べます。2 文字の語は前後が句読点・文頭・文末のときだけ取り除きます(「あの人」は残ります)。",
             SettingKind.Words),
+        new("keywords", "カスタム語彙(Haas)", "エンジンが Haas のときだけ使います。固有名詞などを、書いてほしい表記で読点(、)か改行で区切って並べます。読みを添えるときは「表記=よみ,よみ」(例 Haas=ハース)。その語が話されたときにこの表記で書かれやすくなります。",
+            SettingKind.Words),
         new("fetchCudaRuntime", "CUDA を取得する", "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら Vulkan か CPU で動きます。",
             SettingKind.Toggle),
         new("autoStart", "ログオン時に起動する", "サインインしたときに自動で起動します(トレイのメニューと同じ)。",
@@ -83,6 +85,7 @@ public static class SettingsSchema
         "fetchCudaRuntime" => s.FetchCudaRuntime ? "true" : "false",
         "removeFillers" => s.RemoveFillers ? "true" : "false",
         "fillers" => string.Join("、", s.Fillers ?? []),
+        "keywords" => string.Join("、", s.Keywords ?? []),
         "autoStart" => s.AutoStart ? "true" : "false",
         _ => throw new ArgumentException(key),
     };
@@ -159,6 +162,14 @@ public static class SettingsSchema
             case "fillers":
                 s.Fillers = SplitWords(v);
                 return null;
+            case "keywords":
+            {
+                // 読みの区切りの「,」と語の中の空白(Third Intelligence など)は残す
+                var words = HaasKeywords.Split(v);
+                if (HaasKeywords.InvalidWarning(words) is { } bad) return bad;
+                s.Keywords = words;
+                return null;
+            }
         }
         return $"設定の項目を読めない: {key}";
     }

@@ -280,6 +280,11 @@ internal sealed class VerifyHost : ApplicationContext
                 AppLog.Write($"engine-invalid value={_settings.Engine} fallback={Engines.Whisper}");
             }
             bool haas = Engines.IsHaas(_settings.Engine);
+            if (haas && HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw)
+            {
+                lock (_result) _result.Warnings.Add(kw);
+                AppLog.Write("keywords-invalid");
+            }
             lock (_result) _result.Engine = haas ? Engines.Haas : Engines.Whisper;
             // 検証モードは CUDA の実行時ライブラリを取得しない(取得済みの runtime フォルダがあればそれを読み、無ければ次のバックエンド)。
             // CUDA を試さない設定(vulkan / cpu)と haas(speech.cpp は CUDA を使わない)なら読みもしない(常駐時と同じ)

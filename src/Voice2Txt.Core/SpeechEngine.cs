@@ -92,6 +92,46 @@ public sealed class SpeechToolProvisioner(string toolDir, HttpClient? http = nul
             .FirstOrDefault(p => p is not null && File.Exists(p));
 }
 
+/// <summary>
+/// Haas のカスタム語彙(設定 keywords)を speech.cpp の request option <c>keywords</c>(1 行 1 語、「表記=読み,読み」)へ。
+/// 読めない語(空の表記・空の読み・= が 2 つ以上)は渡さない(worker が要求ごとに誤りを返し、確定版が届かなくなるのを防ぐ)。
+/// </summary>
+public static class HaasKeywords
+{
+    /// <summary>画面・設定の値を語の列へ(読点・改行・タブで区切る。読みの「,」と語の中の空白は残す。空は除き、重複は 1 つに)。</summary>
+    public static List<string> Split(string v) =>
+        v.Split(['、', '､', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
+
+    /// <summary>1 語を整える(表記と読みの前後の空白を除く)。読めなければ null。</summary>
+    public static string? Normalize(string? word)
+    {
+        var w = (word ?? "").Trim();
+        if (w.Length == 0 || w.Contains('\n') || w.Contains('\r')) return null;
+        var parts = w.Split('=');
+        if (parts.Length == 1) return w;
+        if (parts.Length > 2) return null;
+        var written = parts[0].Trim();
+        var readings = parts[1].Split([',', '，', '、']).Select(r => r.Trim()).ToList();
+        if (written.Length == 0 || readings.Any(r => r.Length == 0)) return null;
+        return $"{written}={string.Join(",", readings)}";
+    }
+
+    /// <summary>worker に渡す keywords(読める語を 1 行 1 語で。無ければ null = 渡さない)。</summary>
+    public static string? Join(IEnumerable<string>? words)
+    {
+        var ok = (words ?? []).Select(Normalize).OfType<string>().Distinct().ToList();
+        return ok.Count == 0 ? null : string.Join("\n", ok);
+    }
+
+    /// <summary>読めない語があるときの知らせ(無ければ null)。</summary>
+    public static string? InvalidWarning(IEnumerable<string>? words)
+    {
+        var bad = (words ?? []).Where(w => Normalize(w) is null).ToList();
+        return bad.Count == 0 ? null
+            : $"カスタム語彙の「{string.Join("」「", bad)}」は読めないため使いません(1 語は「表記」か「表記=よみ,よみ」)";
+    }
+}
+
 /// <summary>speech.cpp の worker が返した誤り(fatal / error / 途中で終わった)。</summary>
 public sealed class SpeechWorkerException(string message) : Exception(message);
 
@@ -133,7 +173,8 @@ public sealed class SpeechWorkerClient(TextWriter input, TextReader output)
     }
 
     /// <summary>16 kHz モノラルの音声を文字起こしする(要求は 1 つずつ。空の音声は送らず空文字)。</summary>
-    public async Task<string> TranscribeAsync(float[] samples16k, CancellationToken ct)
+    /// <param name="keywords">カスタム語彙(<see cref="HaasKeywords.Join"/> の形。null なら渡さない)。</param>
+    public async Task<string> TranscribeAsync(float[] samples16k, CancellationToken ct, string? keywords = null)
     {
         if (samples16k.Length == 0) return "";
         await _one.WaitAsync(ct);
@@ -146,7 +187,9 @@ public sealed class SpeechWorkerClient(TextWriter input, TextReader output)
                 var pcm = Pcm16Base64(samples16k.AsSpan(i, Math.Min(ChunkSamples, samples16k.Length - i)));
                 Send(new JsonObject { ["type"] = "chunk", ["id"] = id, ["seq"] = seq++, ["pcm"] = pcm });
             }
-            Send(new JsonObject { ["type"] = "transcribe", ["id"] = id, ["sample_rate"] = Audio.SampleRate });
+            var req = new JsonObject { ["type"] = "transcribe", ["id"] = id, ["sample_rate"] = Audio.SampleRate };
+            if (!string.IsNullOrEmpty(keywords)) req["keywords"] = keywords; // timestamps は使わない(keywords と併用できない)
+            Send(req);
             using var reg = ct.Register(() => { try { Send(new JsonObject { ["type"] = "cancel", ["id"] = id }); } catch (Exception) { } });
             while (true)
             {
@@ -214,14 +257,16 @@ public sealed class SpeechWorkerTranscriber : IEngine
 {
     private readonly Process _proc;
     private readonly SpeechWorkerClient _client;
+    private readonly string? _keywords;
 
     public string Runtime { get; }
     public string? Version => _client.Version;
 
-    private SpeechWorkerTranscriber(Process p, SpeechWorkerClient c, string runtime) { _proc = p; _client = c; Runtime = runtime; }
+    private SpeechWorkerTranscriber(Process p, SpeechWorkerClient c, string runtime, string? keywords) { _proc = p; _client = c; Runtime = runtime; _keywords = keywords; }
 
     /// <summary>worker を起動し、ready(モデルの読み込みと暖機)を待つ。起動できなければ worker の標準エラーの末尾を添えて投げる。</summary>
-    public static async Task<SpeechWorkerTranscriber> StartAsync(string exe, string modelPath, string device, CancellationToken ct)
+    /// <param name="keywords">要求ごとに渡すカスタム語彙(<see cref="HaasKeywords.Join"/>。null なら渡さない)。</param>
+    public static async Task<SpeechWorkerTranscriber> StartAsync(string exe, string modelPath, string device, string? keywords, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(exe)
         {
@@ -245,13 +290,13 @@ public sealed class SpeechWorkerTranscriber : IEngine
             string why; lock (tail) why = string.Join(" / ", tail);
             throw new SpeechWorkerException(ex.Message + (why.Length > 0 ? $"(stderr: {why})" : ""));
         }
-        return new SpeechWorkerTranscriber(p, c, SpeechCatalog.RuntimeOf(c.Device) ?? "unknown");
+        return new SpeechWorkerTranscriber(p, c, SpeechCatalog.RuntimeOf(c.Device) ?? "unknown", keywords);
     }
 
     public Task<string> TranscribeAsync(float[] samples16k, IProgress<string>? partial, CancellationToken ct)
     {
         if (_proc.HasExited) throw new SpeechWorkerException($"speech worker が終わっている(終了コード {_proc.ExitCode})");
-        return _client.TranscribeAsync(samples16k, ct);
+        return _client.TranscribeAsync(samples16k, ct, _keywords);
     }
 
     public void Dispose()
@@ -273,11 +318,11 @@ public static class SpeechEngineLoader
 
     public static async Task<IEngine> LoadAsync(AppSettings s, string modelsDir, Action<string> onProgress, CancellationToken ct,
         SpeechToolProvisioner? tools = null, ModelProvisioner? models = null,
-        Func<string, string, string, CancellationToken, Task<IEngine>>? start = null)
+        Func<string, string, string, string?, CancellationToken, Task<IEngine>>? start = null)
     {
         tools ??= new SpeechToolProvisioner(SpeechCatalog.DefaultToolDirectory);
         models ??= new ModelProvisioner(modelsDir);
-        start ??= async (exe, model, device, c) => await SpeechWorkerTranscriber.StartAsync(exe, model, device, c);
+        start ??= async (exe, model, device, kw, c) => await SpeechWorkerTranscriber.StartAsync(exe, model, device, kw, c);
         string exe, model;
         try { exe = await tools.EnsureAsync(Percent("speech.cpp ", onProgress), ct); }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -287,10 +332,10 @@ public static class SpeechEngineLoader
         { throw new EngineUnavailableException($"Haas-ja-v1.0 の重みを用意できません({ex.Message})。{NoFallback}", ex); }
         onProgress("読み込み");
         IEngine t;
-        try { t = await start(exe, model, SpeechCatalog.Device(s.Backend), ct); }
+        try { t = await start(exe, model, SpeechCatalog.Device(s.Backend), HaasKeywords.Join(s.Keywords), ct); }
         catch (Exception ex) when (ex is not OperationCanceledException)
         { throw new EngineUnavailableException($"speech.cpp の worker を起動できません({ex.Message})。{NoFallback}", ex); }
-        onProgress("暖機");
+        onProgress("暖機"); // カスタム語彙も渡すので、worker が語彙を受け付けない(古い重みなど)なら、ここで理由が分かる
         try { await t.TranscribeAsync(new float[Audio.SampleRate], null, ct); }
         catch (Exception ex)
         {

@@ -134,6 +134,11 @@ internal sealed class TrayApp : ApplicationContext
                 _overlay.BeginInvoke(() => _tray.ShowBalloonTip(8000, "Voice2Txt", ew, ToolTipIcon.Warning));
             }
             bool haas = Engines.IsHaas(_settings.Engine);
+            if (haas && HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw)
+            {
+                AppLog.Write("keywords-invalid"); // 語そのものは書かない
+                _overlay.BeginInvoke(() => _tray.ShowBalloonTip(8000, "Voice2Txt", kw, ToolTipIcon.Warning));
+            }
             string? cudaNote = null;
             if (!haas && Backends.NeedsCudaRuntime(_settings.Backend)) // speech.cpp(haas)は CUDA を使わない
                 cudaNote = await CudaRuntimeLoader.PrepareAsync(
