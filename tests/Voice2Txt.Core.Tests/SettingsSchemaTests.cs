@@ -17,6 +17,31 @@ public class SettingsSchemaTests
         Assert.All(SettingsSchema.Items, i => { Assert.NotEmpty(i.Label); Assert.NotEmpty(i.Description); });
     }
 
+    [Theory]
+    [InlineData("model", "モデル", "Whisper")]
+    [InlineData("preferSpeed", "速さを優先する", "Whisper")]
+    [InlineData("fetchCudaRuntime", "CUDA を取得する", "Whisper")]
+    [InlineData("keywords", "カスタム語彙", "Haas")]
+    public void 片方のエンジンでだけ効く項目は名前に括弧を付けず_説明の先頭で同じ形に示す(string key, string label, string engine)
+    {
+        var item = SettingsSchema.Get(key);
+        Assert.Equal(label, item.Label);
+        Assert.StartsWith($"エンジンが {engine} のときだけ使います。", item.Description);
+    }
+
+    [Fact]
+    public void エンジン限定の示し方は1つだけ_名前の括弧や説明の末尾では示さない()
+    {
+        foreach (var i in SettingsSchema.Items)
+        {
+            Assert.DoesNotContain("(Haas)", i.Label);
+            Assert.DoesNotContain("(Whisper)", i.Label);
+            Assert.DoesNotContain("では使いません", i.Description);
+            int at = i.Description.IndexOf("のときだけ使います", StringComparison.Ordinal);
+            Assert.True(at < 0 || i.Description.StartsWith("エンジンが "), $"{i.Key}: 説明の途中で限定を示している");
+        }
+    }
+
     [Fact]
     public void トークキーは画面の名前でも設定の名前でも選べる()
     {
