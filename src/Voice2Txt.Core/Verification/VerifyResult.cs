@@ -51,6 +51,9 @@ public sealed class VerifyResult
     /// <summary>設定の問題など、利用者に知らせた警告(例: talkKey を読めない)。</summary>
     public List<string> Warnings { get; set; } = [];
 
+    /// <summary>台本の holdUntilAudioEnd を待たずに返した理由(押下が録音になっていなかった。例: モデル準備中のため録音していない)。順に。</summary>
+    public List<string> HoldSkips { get; set; } = [];
+
     /// <summary>設定画面で最後に保存した設定(保存していなければ null)と、そのとき変わった項目のキー。</summary>
     public AppSettings? SavedSettings { get; set; }
     public List<string>? SettingsChanged { get; set; }
@@ -238,6 +241,8 @@ public static class Evaluator
             fails.Add($"合成して送ったキー [{string.Join(",", r.SentKeys)}](期待 [{string.Join(",", sk)}])");
         if (e.Warnings is { } ws && !r.Warnings.SequenceEqual(ws))
             fails.Add($"警告 [{string.Join(",", r.Warnings)}](期待 [{string.Join(",", ws)}])");
+        if (e.HoldSkips is { } hs && !r.HoldSkips.SequenceEqual(hs))
+            fails.Add($"holdUntilAudioEnd を待たずに返した理由 [{string.Join(",", r.HoldSkips)}](期待 [{string.Join(",", hs)}])");
         if (e.SavedSettings is { } want)
         {
             if (r.SavedSettings is null) fails.Add("設定画面で保存されていない");
