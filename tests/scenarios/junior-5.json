@@ -2,7 +2,7 @@
   "name": "junior-5",
   "persona": "junior",
   "step": 5,
-  "description": "設定画面(トレイの「設定…」)を開き、トークキーを選択肢から右 Alt に変えて保存する(settings.json に RMenu が書かれる)。再起動後、同じ 1 文を貼る: 右 Ctrl を押しても録音されず(素通し)、右 Alt で貼れる。オーバーレイは「右Alt を離すと入力」",
+  "description": "設定画面(トレイの「設定…」)を開き(選択式の項目に今の値が出ている。スクショに写らなければ検証モードが値を書き足し、そのことを shots の capture・filled に残す)、トークキーを選択肢から右 Alt に変えて保存する(settings.json に RMenu が書かれる)。再起動後、同じ 1 文を貼る: 右 Ctrl を押しても録音されず(素通し)、右 Alt で貼れる。オーバーレイは「右Alt を離すと入力」",
   "timeoutMs": 600000,
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
@@ -24,6 +24,10 @@
   ],
   "expect": {
     "savedSettings": { "talkKey": "RMenu" },
+    "shots": [
+      { "name": "開いた", "state": "設定画面", "values": { "talkKey": "RControlKey", "engine": "whisper", "model": "large-v3-turbo", "backend": "auto", "delivery": "evacuate" } },
+      { "name": "右Altを選んだ", "state": "設定画面", "values": { "talkKey": "RMenu", "engine": "whisper" } }
+    ],
     "settingsErrors": [],
     "deliveries": [
       { "to": "textbox", "text": "今日の会議の資料をチャットで送ります。", "minSimilarity": 0.8 }

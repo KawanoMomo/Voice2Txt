@@ -129,9 +129,13 @@ internal sealed class VerifyHost : ApplicationContext
     private void SettingsShot(string name)
     {
         var file = $"{++_shotNo:00}-設定画面-{Safe(name)}.png";
-        _settingsForm!.SaveScreenshot(Path.Combine(_shots, file));
-        lock (_result) _result.Shots.Add(new ShotRecord { Name = name, AtMs = _sw.ElapsedMilliseconds, State = "設定画面", Screenshot = "shots/" + file, Capture = "render" });
-        AppLog.Write($"shot {name} state=設定画面");
+        var shot = _settingsForm!.SaveScreenshot(Path.Combine(_shots, file));
+        lock (_result) _result.Shots.Add(new ShotRecord
+        {
+            Name = name, AtMs = _sw.ElapsedMilliseconds, State = "設定画面", Screenshot = "shots/" + file, Capture = shot.Capture,
+            Values = shot.Values, Filled = shot.Filled.Count == 0 ? null : shot.Filled,
+        });
+        AppLog.Write($"shot {name} state=設定画面 capture={shot.Capture}");
     }
 
     private void OnOverlay(OverlayView v)
@@ -481,6 +485,9 @@ internal sealed class VerifyHost : ApplicationContext
                         {
                             lock (_result) { _result.SavedSettings = next; _result.SettingsChanged = changed; }
                         };
+                        // 開くときの窓の動き(下から浮き上がる)を止める: 動いている間に画面から写すと位置がずれる
+                        int off = 1;
+                        Native.DwmSetWindowAttribute(_settingsForm.Handle, Native.DWMWA_TRANSITIONS_FORCEDISABLED, ref off, sizeof(int));
                         _settingsForm.Show();
                         _settingsForm.Refresh();
                         SettingsShot(a.Name ?? "開いた");
