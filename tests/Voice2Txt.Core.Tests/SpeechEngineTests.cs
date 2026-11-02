@@ -306,7 +306,10 @@ public class SpeechEngineTests : IDisposable
         var t = await SpeechEngineLoader.LoadAsync(new AppSettings { Engine = "haas", Backend = "cpu", Keywords = ["Haas = ハース , ハウス", "AIモデル", "bad=", ""] }, models, progress.Add, CancellationToken.None,
             new SpeechToolProvisioner(Path.Combine(_dir, "tools"), null, () => @"C:\bin\speech.exe"), new ModelProvisioner(models, new HttpClient(server)),
             (exe, model, device, kw, _) => { gotExe = exe; gotModel = model; gotDevice = device; gotKeywords = kw; return Task.FromResult<IEngine>(engine); });
-        Assert.Same(engine, t);
+        Assert.IsType<RegionTranscriber>(t); // 長い発話は区間に分けて渡す
+        Assert.Equal("Vulkan", t.Runtime);
+        t.Dispose();
+        Assert.True(engine.Disposed);
         Assert.Equal(@"C:\bin\speech.exe", gotExe);
         Assert.Equal(Path.Combine(models, entry.FileName), gotModel);
         Assert.Equal("cpu", gotDevice);

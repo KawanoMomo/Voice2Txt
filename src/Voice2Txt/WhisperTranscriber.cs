@@ -126,7 +126,7 @@ internal static class EngineLoader
     public static async Task<IEngine> LoadAsync(AppSettings s, string modelsDir, Action<string> onProgress, CancellationToken ct,
         ModelProvisioner? prov = null, SpeechToolProvisioner? tools = null)
     {
-        if (Engines.IsHaas(s.Engine)) return await SpeechEngineLoader.LoadAsync(s, modelsDir, onProgress, ct, tools, prov);
+        if (Engines.IsHaas(s.Engine)) return await SpeechEngineLoader.LoadAsync(s, modelsDir, onProgress, ct, tools, prov, log: AppLog.Write);
         var entry = ModelCatalog.Get(s.Model);
         prov ??= new ModelProvisioner(modelsDir);
         var last = -1;
