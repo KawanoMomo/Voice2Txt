@@ -1,0 +1,114 @@
+{
+  "name": "transcriber-6",
+  "persona": "transcriber",
+  "step": 6,
+  "description": "時間(GPU の無い PC): backend: cpu で「速さを優先する」(preferSpeed)をオンにし、3〜6 秒の発話を 4 本流す。どれも離してから 8 秒以内に届く(オフの CPU は約 17 秒。その半分以下)。確定版は正解文とほぼ一致し(同じ文の繰り返し・音声に無い文が付かない)、言い淀みは取り除かれる",
+  "timeoutMs": 600000,
+  "settings": {
+    "backend": "cpu",
+    "preferSpeed": true
+  },
+  "actions": [
+    {
+      "do": "waitModel",
+      "timeoutMs": 540000
+    },
+    {
+      "do": "focus",
+      "window": "textbox"
+    },
+    {
+      "do": "press",
+      "audio": "test-results/fixtures/utt-07.wav"
+    },
+    {
+      "do": "holdUntilAudioEnd"
+    },
+    {
+      "do": "release"
+    },
+    {
+      "do": "waitIdle",
+      "timeoutMs": 120000
+    },
+    {
+      "do": "press",
+      "audio": "test-results/fixtures/utt-03.wav"
+    },
+    {
+      "do": "holdUntilAudioEnd"
+    },
+    {
+      "do": "release"
+    },
+    {
+      "do": "waitIdle",
+      "timeoutMs": 120000
+    },
+    {
+      "do": "press",
+      "audio": "test-results/fixtures/utt-12.wav"
+    },
+    {
+      "do": "holdUntilAudioEnd"
+    },
+    {
+      "do": "release"
+    },
+    {
+      "do": "waitIdle",
+      "timeoutMs": 120000
+    },
+    {
+      "do": "press",
+      "audio": "test-results/fixtures/utt-16.wav"
+    },
+    {
+      "do": "holdUntilAudioEnd"
+    },
+    {
+      "do": "release"
+    },
+    {
+      "do": "waitIdle",
+      "timeoutMs": 120000
+    }
+  ],
+  "expect": {
+    "deliveries": [
+      {
+        "to": "textbox",
+        "text": "画面の配置について意見をください。",
+        "minSimilarity": 0.8
+      },
+      {
+        "to": "textbox",
+        "text": "テストの結果を共有しますので、各自で目を通してください。",
+        "minSimilarity": 0.8
+      },
+      {
+        "to": "textbox",
+        "text": "申請書は、総務に出してください。",
+        "minSimilarity": 0.8,
+        "notContains": [
+          "ええと",
+          "えーと",
+          "A"
+        ]
+      },
+      {
+        "to": "textbox",
+        "text": "新しい資料は、共有フォルダに保存してあります。",
+        "minSimilarity": 0.8
+      }
+    ],
+    "forbiddenStates": [
+      "退避",
+      "取り消し",
+      "取り消し(無音)"
+    ],
+    "cancellations": [],
+    "runtime": "Cpu",
+    "maxReleaseToDeliverMs": 8000
+  }
+}

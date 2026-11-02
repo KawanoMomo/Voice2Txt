@@ -327,7 +327,7 @@ internal sealed class VerifyHost : ApplicationContext
             lock (_result) _result.TrayTooltip = AppVersion.TrayText(Engines.IdleTrayStatus(_settings.Engine, _result.Model, t.Runtime)); // 常駐時と同じ文言
             _ptt.InterimEnabled = Backends.InterimAllowed(t.Runtime, true); // CPU では途中経過を出さない(常駐時と同じ)
             lock (_result) _result.Interim = _ptt.InterimEnabled && _settings.ShowInterim;
-            AppLog.Write($"engine-ready engine={_result.Engine} model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds} backend={_settings.Backend} interim={_result.Interim}");
+            AppLog.Write($"engine-ready engine={_result.Engine} model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds} backend={_settings.Backend} preferSpeed={_settings.PreferSpeed} interim={_result.Interim}");
             _ptt.SetModelStatus(true);
             _modelReady.TrySetResult();
         }

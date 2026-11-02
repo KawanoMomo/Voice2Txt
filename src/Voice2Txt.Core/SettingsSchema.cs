@@ -50,6 +50,8 @@ public static class SettingsSchema
             SettingKind.Choice, ModelChoices),
         new("backend", "バックエンド", "文字起こしに使う GPU / CPU。自動は CUDA(NVIDIA)→ Vulkan(GPU 全般)→ CPU の順に使えるものを選びます。選んだものを使えなければ CPU で動きます(CPU では途中経過を出しません)。",
             SettingKind.Choice, Backends.Choices),
+        new("preferSpeed", "速さを優先する", "Whisper が 1 回に読む音声の窓(30 秒)を発話の長さに縮めて文字起こしします。CPU や弱い GPU で、離してから届くまでが大きく縮みます。誤りが少し増えることがあります(既定はオフ。Haas では使いません)。",
+            SettingKind.Toggle),
         new("minPressSeconds", "短い押下の取り消し(秒)", "これより短くトークキーを押して離したときは、録音せずに取り消します(押し間違いの対策)。",
             SettingKind.Number, Min: 0.05, Max: 2.0, Step: 0.05, Decimals: 2),
         new("silenceThreshold", "無音のしきい値", "録音の最も大きい音がこれ未満で、雑音よりはっきり大きい声も続かなければ、無音として取り消します。小さい声が取り消されるときは下げます(0.001〜0.1)。",
@@ -82,6 +84,7 @@ public static class SettingsSchema
         "minPressSeconds" => s.MinPressSeconds.ToString(CultureInfo.InvariantCulture),
         "silenceThreshold" => s.SilenceThreshold.ToString(CultureInfo.InvariantCulture),
         "showInterim" => s.ShowInterim ? "true" : "false",
+        "preferSpeed" => s.PreferSpeed ? "true" : "false",
         "fetchCudaRuntime" => s.FetchCudaRuntime ? "true" : "false",
         "removeFillers" => s.RemoveFillers ? "true" : "false",
         "fillers" => string.Join("、", s.Fillers ?? []),
@@ -139,6 +142,7 @@ public static class SettingsSchema
                 return null;
             }
             case "showInterim":
+            case "preferSpeed":
             case "fetchCudaRuntime":
             case "removeFillers":
             case "autoStart":
@@ -153,6 +157,7 @@ public static class SettingsSchema
                 switch (item.Key)
                 {
                     case "showInterim": s.ShowInterim = b.Value; break;
+                    case "preferSpeed": s.PreferSpeed = b.Value; break;
                     case "fetchCudaRuntime": s.FetchCudaRuntime = b.Value; break;
                     case "removeFillers": s.RemoveFillers = b.Value; break;
                     default: s.AutoStart = b.Value; break;
