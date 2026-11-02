@@ -140,7 +140,7 @@ internal sealed class VerifyHost : ApplicationContext
         // モデル準備中は進み具合が 1% ごとに変わる: 記録とスクショは段階が変わるか 10% の刻みを跨いだときだけ
         if (v.State == OverlayState.ModelPreparing)
         {
-            var k = ModelPrepProgress.Milestone(v.Detail);
+            var k = v.Label + "|" + ModelPrepProgress.Milestone(v.Detail); // 準備中 → 使えない は必ず記録する
             if (_lastRecorded == OverlayState.ModelPreparing && k == _lastPrepMilestone) return;
             _lastPrepMilestone = k;
         }

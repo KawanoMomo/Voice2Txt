@@ -17,6 +17,14 @@ public class SettingsSchemaTests
         Assert.All(SettingsSchema.Items, i => { Assert.NotEmpty(i.Label); Assert.NotEmpty(i.Description); });
     }
 
+    [Fact]
+    public void エンジンの説明は_用意できないとき押せばオーバーレイにも理由と直し方が出ると書く()
+    {
+        var d = SettingsSchema.Items.Single(i => i.Key == "engine").Description;
+        Assert.Contains("トレイに出します", d);
+        Assert.Contains("オーバーレイにも理由と直し方が出ます", d);
+    }
+
     [Theory]
     [InlineData("model", "モデル", "Whisper")]
     [InlineData("preferSpeed", "速さを優先する", "Whisper")]

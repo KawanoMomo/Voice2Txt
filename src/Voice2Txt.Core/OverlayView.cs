@@ -23,9 +23,12 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
 
     /// <summary>
     /// モデル準備中の表示のうち、用意に失敗して終わっている(再起動まで使えない)もの。本文は <see cref="Detail"/>(使えないことと直し方)をそのまま出し、
-    /// 待たせる語(「準備中」「完了まで」)を出さない。状態の名前(<see cref="Label"/>)は「モデル準備中」のまま。
+    /// 待たせる語(「準備中」「完了まで」)を出さない。状態の名前(<see cref="Label"/>)も「使えない」にする(ログ・検証モードの結果・スクショ名)。
     /// </summary>
     public bool Unavailable { get; init; }
+
+    /// <summary>用意に失敗して再起動まで音声入力ができない状態の名前(CONTEXT.md「使えない」)。</summary>
+    public const string UnavailableLabel = "使えない";
 
     /// <summary>途中経過の欄に収める最大の行数。超えたら頭を削り、末尾(いま話している所)を残す。</summary>
     public const int InterimMaxLines = 3;
@@ -44,7 +47,7 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
     }
 
     /// <summary>状態の名前(結果 JSON・スクショのファイル名・Verify の期待に使う)。</summary>
-    public string Label => LabelOf(State);
+    public string Label => State == OverlayState.ModelPreparing && Unavailable ? UnavailableLabel : LabelOf(State);
 
     public static string LabelOf(OverlayState s) => s switch
     {
