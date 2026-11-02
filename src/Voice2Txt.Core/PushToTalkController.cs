@@ -226,6 +226,8 @@ public sealed class PushToTalkController : IAsyncDisposable
                 // 言い淀みを取り除いてから届ける(設定で止められる)。言い淀みだけの発話は空になり、取り消し(無音)になる。
                 int fillers = 0;
                 if (_o.Fillers is { Count: > 0 } words) (text, fillers) = Core.Fillers.Remove(text, words);
+                // 日本語の文の間に whisper が書いた空白を詰める(「…ます。 以上です。」)。英文の語の間の空白は残す
+                text = Spacing.Tidy(text);
                 if (text.Length == 0)
                 {
                     Finish(ctx, Outcome.Cancelled, CancelReason.NoText, null, tMs, new(OverlayState.CancelledSilence), fillers: fillers, peak: peak);
@@ -385,6 +387,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 catch (Exception) { continue; } // 途中経過は出せなくても録音と確定版には響かせない
                 // 確定版と同じく言い淀みを除いて見せる(押下中に「ええ」が見えて、届いた確定版から消えている、という食い違いを出さない)
                 if (_o.Fillers is { Count: > 0 } words) text = Core.Fillers.Remove(text, words).Text;
+                text = Spacing.Tidy(text);
                 lock (_gate)
                 {
                     if (ct.IsCancellationRequested || !_held || _seq != seq) return;
