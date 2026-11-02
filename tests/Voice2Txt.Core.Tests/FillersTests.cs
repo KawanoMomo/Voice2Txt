@@ -10,7 +10,9 @@ public class FillersTests
     [Theory]
     [InlineData("申請書は、ええと、ええと、総務に出してください。", "申請書は、総務に出してください。")]
     [InlineData("ええ、それで大丈夫です。", "それで大丈夫です。")]
-    [InlineData("ああ、そうですか。", "そうですか。")]
+    [InlineData("それは、ああ、来週の話です。", "それは、来週の話です。")] // 文の途中の「ああ」は言い淀み
+    [InlineData("ああ。そうですか。", "そうですか。")]                 // 読点の続かない「ああ」だけの文
+    [InlineData("あー、そうですね。", "そうですね。")]
     [InlineData("えっと、明日の会議は三時からです。", "明日の会議は三時からです。")]
     [InlineData("資料は、あの、三部、ええと、五部印刷しておいてください。", "資料は、三部、五部印刷しておいてください。")]
     [InlineData("その、つまり、予算の確認をお願いします。", "つまり、予算の確認をお願いします。")]
@@ -35,11 +37,23 @@ public class FillersTests
     [InlineData("考えーと言った。")]
     [InlineData("見ええと書く。")]
     [InlineData("今日の会議の資料を送ります。")]
+    [InlineData("なんてきれいな夕焼けなのでしょう。ああ、ずっと見ていたいです。")] // 文頭で読点が続く「ああ」は感嘆
+    [InlineData("ああ、そうですか。")]
+    [InlineData("アア、きれいだ。")]
+    [InlineData("彼は言った。「ああ、疲れた」")]
     public void 言い淀みでない語は残す(string input)
     {
         var (text, removed) = Fillers.Remove(input, Fillers.DefaultWords);
         Assert.Equal(input, text);
         Assert.Equal(0, removed);
+    }
+
+    [Fact]
+    public void 文頭の感嘆の後ろの言い淀みは取り除く()
+    {
+        var (text, removed) = Fillers.Remove("ああ、ええと、ずっと見ていたいです。", Fillers.DefaultWords);
+        Assert.Equal("ああ、ずっと見ていたいです。", text);
+        Assert.Equal(1, removed);
     }
 
     [Fact]
