@@ -137,6 +137,10 @@ public sealed class ShotRecord
     public int HintRowY { get; set; }
     public string? Screenshot { get; set; }
     public string? Capture { get; set; }
+    /// <summary>設定画面の shot: 撮った時点で画面に出ている各項目の値(キー → 設定ファイルの形の値)。settings.json と突き合わせる。</summary>
+    public Dictionary<string, string>? Values { get; set; }
+    /// <summary>設定画面の shot: 値が欄に写らず、検証モードが書き足した選択式の項目のキー(無ければ null)。</summary>
+    public List<string>? Filled { get; set; }
 }
 
 public static class TextSimilarity
@@ -309,6 +313,10 @@ public static class Evaluator
                     continue;
                 }
                 if (x.State is not null && x.State != got.State) fails.Add($"shot「{x.Name}」の状態 {got.State}(期待 {x.State})");
+                if (x.Values is { } vs)
+                    foreach (var (k, v) in vs)
+                        if (got.Values is null || !got.Values.TryGetValue(k, out var gv) || !string.Equals(gv, v, StringComparison.OrdinalIgnoreCase))
+                            fails.Add($"shot「{x.Name}」の {k} の値 {(got.Values?.GetValueOrDefault(k) ?? "(無し)")}(期待 {v})");
                 if (x.MinMeter is { } lo && got.Meter < lo) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(下限 {lo:0.00})");
                 if (x.MaxMeter is { } hi && got.Meter > hi) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(上限 {hi:0.00})");
                 if (x.MinInterimChars is { } ilo && got.InterimChars < ilo) fails.Add($"shot「{x.Name}」の途中経過 {got.InterimChars} 文字(下限 {ilo})");

@@ -50,7 +50,7 @@
 
 台本の設定(`settings`): `talkKey` などを台本に書く(検証モードは `%APPDATA%` の settings.json を読まない)。例 `"settings": {"talkKey": "RMenu"}`。モデルを差し替えるときは `"settings": {"model": "base"}`(名前は「使い方」のモデルの表。読み込んだ名前は result.json の `model`、期待は `expect.model`)。
 台本の手(`actions[].do`): `waitModel` / `press`(`audio`、`key`)/ `holdUntilAudioEnd`(流し終わるまで押し続ける。押下が録音になっていない — モデル準備中など — なら待たずに返り、理由を結果の `holdSkips` に残す。期待は `expect.holdSkips`)/ `release`(`key`)/ `key`(`key` を押して離す。省略時 `C`)/ `focus`(`window`: `textbox` か `other`)/ `wait`(`ms`)/ `waitIdle` / `lockClipboard`(`ms`: その間クリップボードを使えなくする。粘っても入らなければ状態「入力失敗」・取り消しの理由 `ClipboardBusy`)/
-`openSettings`(トレイの「設定…」と同じ設定画面を開いて撮る。`name` は shot の名前)/ `setSetting`(`name`: 項目のキー 例 `talkKey`、`value`: 設定ファイルの値か画面の名前 例 `右Alt`)/ `saveSettings`(撮ってから保存を押す。`<dir>/settings.json` に書く)/ `restart`(その settings.json を読み直して受け付け直す = 再起動。モデルが変われば読み込み直す。結果の発話の番号は再起動の前の続きから振る)。
+`openSettings`(トレイの「設定…」と同じ設定画面を開いて撮る。`name` は shot の名前。結果の shot の `values` に撮った時点で画面に出ている各項目の値を設定ファイルの形で残し、期待 `expect.shots[].values` で確かめる。選択式の値が画に写らなければ描き直し・画面からの写し・書き足しで補い、`capture` と `filled` に残す)/ `setSetting`(`name`: 項目のキー 例 `talkKey`、`value`: 設定ファイルの値か画面の名前 例 `右Alt`)/ `saveSettings`(撮ってから保存を押す。`<dir>/settings.json` に書く)/ `restart`(その settings.json を読み直して受け付け直す = 再起動。モデルが変われば読み込み直す。結果の発話の番号は再起動の前の続きから振る)。
 `key` は Keys の名前(`RControlKey` / `RMenu` / `C` など。省略時は設定のトークキー)。キーは本番のキーボードフックと同じ判定に通す: トークキーは握りつぶして録音、それ以外は素通し(録音しない)、トークキーの押下中に別キーを押すと取り消して「トークキー+そのキー」を合成して送る。
 手 `key` は `Ctrl+V` のように `+` でつないだ組み合わせも 1 手で送る(修飾キー `Ctrl` / `Shift` / `Alt` を押したまま最後のキーを押して離す。修飾キーはトークキーでない側の左右)。検証用のテキスト欄が前面のときの `Ctrl+V` は、利用者の貼り付けとしてクリップボードの中身を欄へ入れる(退避した文を元の欄へ貼り直す手順を確かめる)。
 結果の `passedKeys`(素通ししたキー。`"RControlKey down"` の形)・`sentKeys`(合成して送ったキー)・`warnings`(例: talkKey を読めない)に残る。

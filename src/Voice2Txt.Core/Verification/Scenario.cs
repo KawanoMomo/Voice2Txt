@@ -173,6 +173,8 @@ public sealed class ShotExpectation
     public string Name { get; set; } = "";
     /// <summary>撮ったときの状態(省略可)。</summary>
     public string? State { get; set; }
+    /// <summary>設定画面の shot: 撮った時点で画面に出ている項目の値(キー → 設定ファイルの形。大文字小文字は区別しない。省略可)。</summary>
+    public Dictionary<string, string>? Values { get; set; }
     /// <summary>音量バーの値(0〜1)の下限・上限(省略可)。</summary>
     public double? MinMeter { get; set; }
     public double? MaxMeter { get; set; }
