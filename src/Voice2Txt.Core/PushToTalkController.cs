@@ -23,9 +23,10 @@ public sealed record UtteranceReport(
 /// <param name="InterimIntervalMs">押下中に途中経過を作り直す間隔(前の作り直しが終わってから次までの ms)。0 なら途中経過を出さない。</param>
 /// <param name="ReturnToTarget">届け方 return(<see cref="Deliveries"/>): 前面が変わっていても押した時点のウィンドウへ戻して貼り、
 /// <see cref="PasteSettleMs"/> 待ってからクリップボードを貼る前の中身に戻し、元の前面へ戻す。</param>
+/// <param name="ModelNoticeMs">モデル準備中・使えないときに押して離した後も、その知らせを出しておくミリ秒。null なら <see cref="OverlayView.ModelNoticeMs"/>(文言の長さに合わせた既定)。設定項目ではない(テストが短くするためのもの)。</param>
 public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01,
     int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500, IReadOnlyList<string>? Fillers = null,
-    int InterimIntervalMs = 0, bool ReturnToTarget = false)
+    int InterimIntervalMs = 0, bool ReturnToTarget = false, int? ModelNoticeMs = null)
 {
     /// <summary>途中経過を作り直す間隔の既定(MOC の「約 0.7 秒ごと」)。</summary>
     public const int DefaultInterimIntervalMs = 700;
@@ -57,6 +58,8 @@ public sealed class PushToTalkController : IAsyncDisposable
     private System.Diagnostics.Stopwatch? _sincePaste;   // 最後に Ctrl+V を送ってから(worker だけが触る)
 
     private bool _held, _started, _modelHeld, _modelReady, _modelFailed;
+    private bool _modelNotice;      // モデル準備中・使えないときに押して離した後も、その知らせを出しておく間
+    private int _modelNoticeToken;  // 知らせを消す時計の世代(押し直す・用意ができたら古い時計は何もしない)
     private string? _modelDetail;
     private int _seq, _pending;
     private long _pressAt, _startedAt;
@@ -93,7 +96,12 @@ public sealed class PushToTalkController : IAsyncDisposable
     /// <summary>モデルの準備状況。準備中にトークキーが押されたら「モデル準備中」を出し、録音しない。</summary>
     public void SetModelStatus(bool ready, string? detail = null)
     {
-        lock (_gate) { _modelReady = ready; _modelFailed = false; _modelDetail = detail; Emit(); }
+        lock (_gate)
+        {
+            _modelReady = ready; _modelFailed = false; _modelDetail = detail;
+            if (ready) _modelNotice = false; // 使えるようになった: 「完了まで使えません」を残さない
+            Emit();
+        }
     }
 
     /// <summary>
@@ -119,6 +127,7 @@ public sealed class PushToTalkController : IAsyncDisposable
         {
             if (_held || _modelHeld) return; // キーリピート
             _transient = null;
+            _modelNotice = false;
             if (!_modelReady) { _modelHeld = true; Emit(); return; }
             _held = true; _started = false;
             int seq = ++_seq;
@@ -160,8 +169,13 @@ public sealed class PushToTalkController : IAsyncDisposable
             if (_modelHeld)
             {
                 _modelHeld = false;
+                // 知らせ(進み具合・使えない理由と直し方)は離した後もしばらく出しておき、時間で消す(取り消しの知らせと同じく、短く押しても読める)
+                _modelNotice = true;
+                int token = ++_modelNoticeToken;
+                int ms = _o.ModelNoticeMs ?? OverlayView.ModelNoticeMs(_modelFailed);
                 Report(new(0, Outcome.Cancelled, CancelReason.ModelNotReady, null, _d.Clock.NowMs, null, 0, null, null));
                 Emit();
+                _ = EndModelNoticeAsync(token, ms);
                 return;
             }
             if (!_held) return;
@@ -182,6 +196,19 @@ public sealed class PushToTalkController : IAsyncDisposable
             }
             _pending++;
             _queue.Writer.TryWrite((ctx, rec.StopAsync()));
+            Emit();
+        }
+    }
+
+    /// <summary>離した後に残したモデル準備中・使えないの知らせを、<paramref name="ms"/> 後に消す(その間に押し直されたり用意ができたりしていれば何もしない)。</summary>
+    private async Task EndModelNoticeAsync(int token, int ms)
+    {
+        try { await Task.Delay(ms, _cts.Token); }
+        catch (OperationCanceledException) { return; }
+        lock (_gate)
+        {
+            if (token != _modelNoticeToken || !_modelNotice) return;
+            _modelNotice = false;
             Emit();
         }
     }
@@ -342,6 +369,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 : _pending > 0 ? new(OverlayState.ProcessingAndRecording, _pending, null, _interim)
                 : new(OverlayState.Recording, 0, null, _interim);
         if (_pending > 0) return new(OverlayState.Processing, _pending, null, _interim);
+        if (_modelNotice) return new(OverlayState.ModelPreparing, 0, _modelDetail) { Unavailable = _modelFailed };
         return _transient ?? OverlayView.Hidden;
     }
 
