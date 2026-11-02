@@ -19,7 +19,12 @@ portable.zip の場合
       取得元 NVIDIA の公式 redist(https://developer.download.nvidia.com/compute/cuda/redist/)。SHA-256 を照合して
       %LOCALAPPDATA%\Voice2Txt\runtime\ に置きます。NVIDIA の CUDA Toolkit EULA に従う NVIDIA の著作物です。
       取得しない場合は設定の fetchCudaRuntime を false にしてください(Vulkan か CPU で動きます)。
-  準備中はトレイとオーバーレイに「モデル準備中」と出ます。ネットに出るのはこの 2 つの取得だけです。
+  エンジンを Haas(設定の engine を haas)にしたときは、上の 2 つの代わりに次を取得します(CUDA は使いません)。
+  - speech.cpp(v0.10.1、Windows x64 Vulkan 版の書庫、約 30 MB。PATH に speech.exe があればそれを使い取得しません)
+      取得元 https://github.com/nyosegawa/speech.cpp/releases 。SHA-256 で検証して %APPDATA%\Voice2Txt\tools\speech\ に置きます。
+  - Haas-ja-v1.0 の重み(Haas-616M-ja-v1.0-Q8_0.gguf、約 0.66 GB)
+      取得元 https://huggingface.co/sakasegawa/Haas-ja-v1.0-GGUF 。SHA-256 で検証して %APPDATA%\Voice2Txt\models\ に置きます。
+  準備中はトレイとオーバーレイに「モデル準備中」と出ます。ネットに出るのはここに挙げた取得だけです(どれも固定の取得元から取り、SHA-256 を照合します)。
 
 ライセンス
   Voice2Txt は MIT ライセンスです(LICENSE.txt)。同梱する他者の著作物と、そのライセンスは THIRD_PARTY_NOTICES.md にあります。

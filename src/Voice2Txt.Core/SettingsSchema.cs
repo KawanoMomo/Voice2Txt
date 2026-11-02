@@ -40,17 +40,23 @@ public static class SettingsSchema
         ModelCatalog.Entries.Select(e => new SettingChoice(e.Name,
             $"{e.Name}({Size(e.Size)}{(e.Name == ModelCatalog.DefaultName ? "、既定" : "")})")).ToList();
 
+    /// <summary>
+    /// 片方のエンジンでだけ効く項目の示し方(1 つに揃える): 名前は用語のまま括弧を付けず、説明の先頭に「エンジンが … のときだけ使います。」と書く。
+    /// </summary>
+    public static string OnlyFor(string engine, string description) =>
+        $"エンジンが {(Engines.IsHaas(engine) ? "Haas" : "Whisper")} のときだけ使います。{description}";
+
     public static IReadOnlyList<SettingItem> Items { get; } =
     [
         new("talkKey", "トークキー", "押している間だけ録音し、離すと文字起こしして貼り付けるキー。押している間に他のキーを押すと取り消しになり、そのキーとの組み合わせ(例 右Ctrl+C)として送られます。",
             SettingKind.Choice, TalkKeyChoices),
         new("engine", "エンジン", "文字起こしのエンジン。Whisper(既定)か、日本語専用の Haas-ja-v1.0(speech.cpp で動かす。初回に speech.cpp と重み 0.66 GB を取得)。Haas を用意できないときは Whisper に切り替えず、理由をトレイに出します。",
             SettingKind.Choice, Engines.Choices),
-        new("model", "モデル", "文字起こしに使う Whisper のモデル。大きいほど正確で、用意(初回のダウンロード)と処理に時間がかかります。",
+        new("model", "モデル", OnlyFor(Engines.Whisper, "文字起こしに使うモデル。大きいほど正確で、用意(初回のダウンロード)と処理に時間がかかります。"),
             SettingKind.Choice, ModelChoices),
         new("backend", "バックエンド", "文字起こしに使う GPU / CPU。自動は CUDA(NVIDIA)→ Vulkan(GPU 全般)→ CPU の順に使えるものを選びます。選んだものを使えなければ CPU で動きます(CPU では途中経過を出しません)。",
             SettingKind.Choice, Backends.Choices),
-        new("preferSpeed", "速さを優先する", "Whisper が 1 回に読む音声の窓(30 秒)を発話の長さに縮めて文字起こしします。CPU や弱い GPU で、離してから届くまでが大きく縮みます。誤りが少し増えることがあります(既定はオフ。Haas では使いません)。",
+        new("preferSpeed", "速さを優先する", OnlyFor(Engines.Whisper, "Whisper が 1 回に読む音声の窓(30 秒)を発話の長さに縮めて文字起こしします。CPU や弱い GPU で、離してから届くまでが大きく縮みます。誤りが少し増えることがあります(既定はオフ)。"),
             SettingKind.Toggle),
         new("delivery", "届け方", "離した時に前面のウィンドウが押した時と違うとき。既定は貼らずにクリップボードへ退避します(元の欄で Ctrl+V)。「押した時のウィンドウへ戻して貼る」は、押した時のウィンドウを一瞬前面に戻して貼り、元のウィンドウへ戻します。貼った後はクリップボードを貼る前の中身に戻します。",
             SettingKind.Choice, Deliveries.Choices),
@@ -64,9 +70,9 @@ public static class SettingsSchema
             SettingKind.Toggle),
         new("fillers", "取り除く言い淀み", "取り除く語を読点(、)か空白で区切って並べます。2 文字の語は前後が句読点・文頭・文末のときだけ取り除きます(「あの人」は残ります)。文頭の「ああ、」は感嘆として残ります。",
             SettingKind.Words),
-        new("keywords", "カスタム語彙(Haas)", "エンジンが Haas のときだけ使います。固有名詞などを、書いてほしい表記で読点(、)か改行で区切って並べます。読みを添えるときは「表記=よみ,よみ」(例 Haas=ハース)。その語が話されたときにこの表記で書かれやすくなります。",
+        new("keywords", "カスタム語彙", OnlyFor(Engines.Haas, "固有名詞などを、書いてほしい表記で読点(、)か改行で区切って並べます。読みを添えるときは「表記=よみ,よみ」(例 Haas=ハース)。その語が話されたときにこの表記で書かれやすくなります。"),
             SettingKind.Words),
-        new("fetchCudaRuntime", "CUDA を取得する", "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら Vulkan か CPU で動きます。",
+        new("fetchCudaRuntime", "CUDA を取得する", OnlyFor(Engines.Whisper, "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら Vulkan か CPU で動きます。"),
             SettingKind.Toggle),
         new("autoStart", "ログオン時に起動する", "サインインしたときに自動で起動します(トレイのメニューと同じ)。",
             SettingKind.Toggle),
