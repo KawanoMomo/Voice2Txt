@@ -49,7 +49,8 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
         return new WhisperTranscriber(f, p, r, silenceThreshold, rt);
     }
 
-    private static WhisperProcessorBuilder WithContext(WhisperProcessorBuilder b, int ctx) => ctx > 0 ? b.WithAudioContextSize(ctx) : b;
+    // 縮めた窓では温度を上げてやり直さない(繰り返しで失敗とされた復号を、5 通りの標本で何度もやり直して遅くなる。繰り返しは DecodeGuardedAsync が落とす)
+    private static WhisperProcessorBuilder WithContext(WhisperProcessorBuilder b, int ctx) => ctx > 0 ? b.WithAudioContextSize(ctx).WithTemperatureInc(0) : b;
 
     /// <summary>モデルの名前から DTW の alignment heads(分からなければ null = 拾い直さない)。</summary>
     internal static WhisperAlignmentHeadsPreset? AlignmentHeads(string? modelName) => modelName?.ToLowerInvariant() switch
@@ -92,7 +93,7 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
     {
         var res = new List<DecodedSegment>();
         foreach (var seg in await DecodeGuardedAsync(_processor.For(samples), samples, _fit ? _decoded : null, ct))
-            res.Add(new DecodedSegment(seg.Text, seg.Tokens.Select(t => new TimedToken(t.DtwTimestamp < 0 ? -1 : t.DtwTimestamp / 100.0, t.Text ?? "")).ToList(), seg.End.TotalSeconds));
+            res.Add(new DecodedSegment(seg.Text, seg.Tokens, seg.EndSeconds));
         return res;
     }
 
@@ -122,9 +123,9 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
     /// 崩れた区切り(<see cref="Decoding.Derailed"/>)から後ろを捨て、復号を止める。
     /// 止めても whisper.cpp が返し終えるまで待つ(同じ処理器を次の復号に使うため)。
     /// </summary>
-    private static async Task<List<SegmentData>> DecodeGuardedAsync(WhisperProcessor p, float[] samples, StringBuilder? guard, CancellationToken ct)
+    private static async Task<List<Seg>> DecodeGuardedAsync(WhisperProcessor p, float[] samples, StringBuilder? guard, CancellationToken ct)
     {
-        var res = new List<SegmentData>();
+        var res = new List<Seg>();
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         bool derailed = false;
         double sec = samples.Length / (double)Audio.SampleRate;
@@ -140,13 +141,26 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
                     stop.Cancel();
                     continue;
                 }
-                res.Add(seg);
-                guard?.Append(seg.Text);
+                var tokens = seg.Tokens.Select(t => new TimedToken(t.DtwTimestamp < 0 ? -1 : t.DtwTimestamp / 100.0, t.Text ?? "")).ToList();
+                var text = seg.Text;
+                if (guard is not null && Decoding.TrimRepeatedTail(text) is var kept && kept.Length < text.Length)
+                {
+                    // 1 つの区切りの中の繰り返し: 繰り返した分の文字と語を落とす
+                    AppLog.Write($"decode-repeat at={seg.Start.TotalSeconds:F2} chars={text.Length}->{kept.Length}"); // 本文は書かない
+                    var at = Recovery.Align(text, tokens);
+                    tokens = tokens.Where((_, i) => at[i] < kept.Length).ToList();
+                    text = kept;
+                }
+                res.Add(new Seg(text, tokens, seg.End.TotalSeconds, seg.NoSpeechProbability));
+                guard?.Append(text);
             }
         }
         catch (Exception) when (derailed && !ct.IsCancellationRequested) { }
         return res;
     }
+
+    /// <summary>復号の区切り(繰り返しを落とした後)。</summary>
+    private sealed record Seg(string Text, IReadOnlyList<TimedToken> Tokens, double EndSeconds, double NoSpeechProbability);
 
     public void Dispose()
     {

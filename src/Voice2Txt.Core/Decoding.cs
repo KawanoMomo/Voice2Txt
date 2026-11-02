@@ -55,4 +55,32 @@ public static class Decoding
         return end > audioSeconds + AudioContextMarginSeconds || end <= start
             || t.Count(char.IsLetterOrDigit) >= 2 && prev.EndsWith(t, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// 区切りの文字列の末尾で、文(句点・疑問符などで終わる 2 文字以上)がそのまま 2 回以上続いていれば 1 回分にする(縮めた窓の復号が 1 つの区切りの中で繰り返した)。
+    /// 繰り返しが無ければそのまま返す。
+    /// </summary>
+    public static string TrimRepeatedTail(string text)
+    {
+        var t = text.TrimEnd();
+        for (bool again = true; again;)
+        {
+            again = false;
+            for (int n = t.Length / 2; n >= 2; n--)
+            {
+                if (!SentenceEnd(t[^1])) break;
+                int a = t.Length - 2 * n;
+                if (string.CompareOrdinal(t, a, t, t.Length - n, n) != 0) continue;
+                var u = t.Substring(t.Length - n);
+                // 繰り返しの単位は文・句の頭から(前が文頭・文の終わり・読点)。文字が 2 つ以上
+                if (u.Count(char.IsLetterOrDigit) < 2 || a > 0 && !SentenceEnd(t[a - 1]) && t[a - 1] is not ('、' or ',' or '，') && !char.IsWhiteSpace(t[a - 1])) continue;
+                t = t[..^n];
+                again = true;
+                break;
+            }
+        }
+        return t.Length == text.TrimEnd().Length ? text : t;
+    }
+
+    private static bool SentenceEnd(char c) => c is '。' or '．' or '.' or '？' or '?' or '！' or '!';
 }
