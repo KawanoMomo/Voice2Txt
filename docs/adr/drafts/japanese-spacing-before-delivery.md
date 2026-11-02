@@ -24,6 +24,6 @@
 
 ## 結果
 
-- m01〜m10 で句点の後の空白が 0(unit `SpacingTests`、台本 `transcriber-3` の 2 文の発話 utt-15・utt-26・utt-32 に `notContains: [" "]`)
+- m01〜m10 で句点の後の空白が 0(unit `SpacingTests`、台本 `transcriber-3` の 2 文の発話 utt-15・utt-29・utt-32 と、m02 と同じ形の合成の発話 utt-33 に `notContains: [" "]`。utt-33 は main で空白が入り赤、この変更で緑)
 - 英文の語の間の空白、「booking.と」「、 Please」のような英文と日本語の境は変わらない
 - 数字と漢字の間(「10 個」)の空白は英数字側の扱いとして残す
