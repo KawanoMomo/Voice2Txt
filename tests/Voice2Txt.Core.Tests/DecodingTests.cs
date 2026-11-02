@@ -18,7 +18,17 @@ public class DecodingTests
     public void 初期プロンプトは数える列の終わりの十を数字で見せる()
     {
         // 「…ここのつ、とお。」の「とお」は「つ」が付かない短い数で、前置きが無いと「等」になる
-        Assert.EndsWith("9つ、10。", Decoding.InitialPrompt);
+        Assert.EndsWith("ここのつ、10。", Decoding.InitialPrompt);
+    }
+
+    [Fact]
+    public void 初期プロンプトの数字は末尾の10だけ()
+    {
+        // 「9つ」を数字で見せると、数え上げでない語の「いち」「ご」まで数字に寄る(「いちごいちえ」→「151へ」)。
+        // 数字で見せるのは「つ」が付かない短い数(とお)だけにする
+        var digits = new string(Decoding.InitialPrompt.Where(char.IsAsciiDigit).ToArray());
+        Assert.Equal("10", digits);
+        Assert.EndsWith("10。", Decoding.InitialPrompt);
     }
 
     [Fact]
