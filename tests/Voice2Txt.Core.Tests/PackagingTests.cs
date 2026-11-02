@@ -33,6 +33,20 @@ public class PackagingTests
     }
 
     [Fact]
+    public void 終了のしかたはトレイのメニューの終了として_READMEと同梱のREADMEに書いてある()
+    {
+        var root = RepoRoot();
+        var tray = File.ReadAllText(Path.Combine(root, "src", "Voice2Txt", "TrayApp.cs"));
+        Assert.Contains("menu.Items.Add(\"終了\"", tray); // 案内する操作がトレイのメニューに実在する
+        foreach (var doc in new[] { "README.md", Path.Combine("packaging", "README-dist.txt") })
+        {
+            var text = File.ReadAllText(Path.Combine(root, doc));
+            Assert.Matches(new Regex("右クリックし、メニューの最後の「終了」を選"), text);
+            Assert.Contains("「^」", text); // 隠れているインジケーターの中にあることも
+        }
+    }
+
+    [Fact]
     public void ワークフローはタグのpushで動き_setupとportableをReleaseに付ける()
     {
         var yml = File.ReadAllText(Path.Combine(RepoRoot(), ".github", "workflows", "windows-app.yml"));
