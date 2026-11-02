@@ -318,7 +318,7 @@ public static class SpeechEngineLoader
 
     public static async Task<IEngine> LoadAsync(AppSettings s, string modelsDir, Action<string> onProgress, CancellationToken ct,
         SpeechToolProvisioner? tools = null, ModelProvisioner? models = null,
-        Func<string, string, string, string?, CancellationToken, Task<IEngine>>? start = null)
+        Func<string, string, string, string?, CancellationToken, Task<IEngine>>? start = null, Action<string>? log = null)
     {
         tools ??= new SpeechToolProvisioner(SpeechCatalog.DefaultToolDirectory);
         models ??= new ModelProvisioner(modelsDir);
@@ -343,7 +343,8 @@ public static class SpeechEngineLoader
             if (ex is OperationCanceledException) throw;
             throw new EngineUnavailableException($"speech.cpp の worker で文字起こしできません({ex.Message})。{NoFallback}", ex);
         }
-        return t;
+        // 30 秒を超える発話は声の区間ごとに渡す(1 回に文がいくつも入ると Haas は文を丸ごと落とす)
+        return new RegionTranscriber(t, s.SilenceThreshold, log);
     }
 
     /// <summary>(段階, 0〜1)を「{接頭}{段階} N%」の準備の文へ(1% ごと)。</summary>
