@@ -42,6 +42,7 @@ internal sealed class VerifyHost : ApplicationContext
     private OverlayState _lastRecorded = OverlayState.Hidden;
     private string? _lastPrepMilestone;
     private string? _fetchDir; // modelPrep = download で取得したモデルを置くフォルダ(終わったら消す)
+    private Task? _pressAudio; // 最後の press が始めた録音の、流し込む音声の終わり(録音にならなかった押下なら null)
 
     /// <param name="engine">台本の settings.engine に重ねるエンジン(--engine。同じ台本を whisper と haas で比べる)。null なら台本どおり。</param>
     public VerifyHost(string scenarioPath, string outDir, string? engine = null)
@@ -423,10 +424,23 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 case "press":
                     _recorder.NextAudio = a.Audio is null ? [] : Audio.ReadWav16kMono(Scenario.ResolvePath(_scenarioPath, a.Audio));
+                    var before = _recorder.AudioEnd;
                     Key(a.Key, down: true);
+                    // この押下で始めた録音(押したままの押し直しなら流し込み中の録音)。録音にならなければ null
+                    var after = _recorder.AudioEnd;
+                    _pressAudio = after != before ? after : before is { IsCompleted: false } ? before : null;
                     break;
                 case "holdUntilAudioEnd":
-                    await _recorder.WaitAudioEndAsync();
+                    // 押下が録音になっていなければ流し終わりは来ない: 待たずに返し、理由を残す(台本を打ち切りまで黙って止めない)
+                    var playing = _pressAudio;
+                    var model = _modelReady.Task.IsCompletedSuccessfully ? ModelReadiness.Ready
+                        : _modelReady.Task.IsFaulted ? ModelReadiness.Failed : ModelReadiness.Preparing;
+                    if (HoldUntilAudioEnd.SkipReason(playing is not null, model) is { } skip)
+                    {
+                        AppLog.Write($"hold-skip reason={skip}");
+                        lock (_result) _result.HoldSkips.Add(skip);
+                    }
+                    else await playing!;
                     break;
                 case "release":
                     Key(a.Key, down: false);
@@ -550,15 +564,16 @@ internal sealed class VerifyRecorder : IRecorder
 {
     public const int MicOpenDelayMs = 150;
     public float[] NextAudio { get; set; } = [];
-    private TaskCompletionSource _audioEnd = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource? _audioEnd;
 
-    public Task WaitAudioEndAsync() => _audioEnd.Task;
+    /// <summary>最後に始めた録音の、流し込む音声の終わり。まだ一度も録音を始めていなければ null。</summary>
+    public Task? AudioEnd => _audioEnd?.Task;
 
     public IRecording Start(Action onStarted)
     {
         var audio = NextAudio;
-        _audioEnd = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        var end = _audioEnd;
+        var end = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _audioEnd = end;
         var r = new Rec(audio);
         _ = Task.Run(async () =>
         {

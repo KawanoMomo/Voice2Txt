@@ -155,6 +155,9 @@ public sealed class Expectation
     /// <summary>警告の列(空配列なら警告が無いこと)。</summary>
     public List<string>? Warnings { get; set; }
 
+    /// <summary>holdUntilAudioEnd を待たずに返した理由の列(空配列なら全部の押下が録音になって流し終わりまで押し続けたこと)。</summary>
+    public List<string>? HoldSkips { get; set; }
+
     /// <summary>スクリーンショットが撮れていなければならない状態。</summary>
     public List<string>? Screenshots { get; set; }
 
