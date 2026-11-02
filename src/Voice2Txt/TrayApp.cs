@@ -162,7 +162,7 @@ internal sealed class TrayApp : ApplicationContext
         catch (Exception ex)
         {
             AppLog.Write("engine-error " + ex.Message);
-            _ptt.SetModelStatus(false, Engines.FailedTrayStatus(_settings.Engine)); // 押したときのオーバーレイにも用意できない理由の要点を出す
+            _ptt.SetModelFailed(Engines.FailedOverlayText(_settings.Engine)); // 押したときのオーバーレイには待たせず、使えないことと直し方を出す
             _overlay.BeginInvoke(() =>
             {
                 _tray.Text = AppVersion.TrayText(Engines.FailedTrayStatus(_settings.Engine));

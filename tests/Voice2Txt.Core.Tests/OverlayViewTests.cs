@@ -58,4 +58,16 @@ public class OverlayViewTests
         static string Squash(string t) => string.Concat(t.Where(c => !char.IsWhiteSpace(c)));
         Assert.Equal(Squash(v.Text("右Alt")), Squash(string.Concat(v.Parts("右Alt").Select(p => p.Text))));
     }
+
+    [Fact]
+    public void 用意に失敗した表示は詳細をそのまま出し_状態の名前はモデル準備中のまま()
+    {
+        var msg = Engines.FailedOverlayText("haas");
+        var v = new OverlayView(OverlayState.ModelPreparing, 0, msg) { Unavailable = true };
+        Assert.Equal(msg, v.Text("右Ctrl"));
+        Assert.Equal(msg, Assert.Single(v.Parts("右Ctrl")).Text);
+        Assert.Equal("モデル準備中", v.Label);
+        Assert.Null(v.TransientMs); // 押している間は出し続ける
+        Assert.NotEqual(new OverlayView(OverlayState.ModelPreparing, 0, msg), v);
+    }
 }

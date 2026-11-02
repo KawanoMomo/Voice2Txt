@@ -56,7 +56,7 @@ public sealed class PushToTalkController : IAsyncDisposable
     private readonly Task _worker;
     private System.Diagnostics.Stopwatch? _sincePaste;   // 最後に Ctrl+V を送ってから(worker だけが触る)
 
-    private bool _held, _started, _modelHeld, _modelReady;
+    private bool _held, _started, _modelHeld, _modelReady, _modelFailed;
     private string? _modelDetail;
     private int _seq, _pending;
     private long _pressAt, _startedAt;
@@ -93,7 +93,16 @@ public sealed class PushToTalkController : IAsyncDisposable
     /// <summary>モデルの準備状況。準備中にトークキーが押されたら「モデル準備中」を出し、録音しない。</summary>
     public void SetModelStatus(bool ready, string? detail = null)
     {
-        lock (_gate) { _modelReady = ready; _modelDetail = detail; Emit(); }
+        lock (_gate) { _modelReady = ready; _modelFailed = false; _modelDetail = detail; Emit(); }
+    }
+
+    /// <summary>
+    /// モデル(エンジン)の用意に失敗して終わった。以後に押されたら、待たせる「モデル準備中」の文言ではなく
+    /// <paramref name="message"/>(使えないことと直し方)を出し、録音しない。
+    /// </summary>
+    public void SetModelFailed(string message)
+    {
+        lock (_gate) { _modelReady = false; _modelFailed = true; _modelDetail = message; Emit(); }
     }
 
     private volatile bool _interimEnabled = true;
@@ -325,7 +334,7 @@ public sealed class PushToTalkController : IAsyncDisposable
 
     private OverlayView Compute()
     {
-        if (_modelHeld) return new(OverlayState.ModelPreparing, 0, _modelDetail);
+        if (_modelHeld) return new(OverlayState.ModelPreparing, 0, _modelDetail) { Unavailable = _modelFailed };
         if (_held)
             return !_started ? new(OverlayState.Preparing, _pending)
                 : _pending > 0 ? new(OverlayState.ProcessingAndRecording, _pending, null, _interim)
