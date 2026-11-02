@@ -8,9 +8,13 @@ namespace Voice2Txt.Core;
 /// 2 文字の語(「あの」「その」「まあ」「ええ」など、指示語や返事と同じ形のもの)は、後ろも区切り(読点・句点・空白・文末)のときだけ取り除く
 /// (「あの人」「そのため」「ああいう」は残る)。3 文字以上の語(「ええと」「えっと」「うーん」など)は後ろに続く語があっても取り除く。
 /// 語の後ろの伸ばし(ー・〜)と読点は一緒に消す。カタカナで書かれた言い淀みも同じ語として扱う。
+/// 感嘆の語(<see cref="Exclamations"/>。「ああ」)は、文頭(発話の頭か句点の後)で読点が続くとき(「ああ、ずっと見ていたい」)は感嘆として残す。文の途中なら取り除く。
 /// </summary>
 public static class Fillers
 {
+    /// <summary>言い淀みにも感嘆にもなる語。文頭で読点が続くときは取り除かない(語の一覧にあっても)。</summary>
+    public static readonly IReadOnlyList<string> Exclamations = ["ああ"];
+
     /// <summary>既定で取り除く語(日本語の代表的な言い淀み)。設定 <see cref="AppSettings.Fillers"/> の初期値。</summary>
     public static readonly IReadOnlyList<string> DefaultWords =
     [
@@ -48,6 +52,8 @@ public static class Fillers
             int j = i + w.Length;
             while (j < s.Length && IsLong(s[j])) j++;
             if (j == s.Length) return j;
+            // 文頭の感嘆(「ああ、」)は言い淀みでない。短い語も試す
+            if (IsComma(s[j]) && Exclamations.Contains(w) && AtSentenceHead(s, i)) continue;
             if (IsComma(s[j]) || char.IsWhiteSpace(s[j]))
             {
                 while (j < s.Length && (IsComma(s[j]) || char.IsWhiteSpace(s[j]))) j++;
@@ -81,6 +87,14 @@ public static class Fillers
         while (sb.Length > 0 && (IsComma(sb[^1]) || char.IsWhiteSpace(sb[^1]))) sb.Length--;
         // 句読点しか残らなければ空(取り消しになる)
         return sb.ToString().Any(c => !IsComma(c) && !IsStop(c) && !char.IsWhiteSpace(c)) ? sb.ToString() : "";
+    }
+
+    /// <summary>i が文の頭か: 前が(空白を除いて)何も無い・句点・開きかっこ。</summary>
+    private static bool AtSentenceHead(string s, int i)
+    {
+        int k = i - 1;
+        while (k >= 0 && char.IsWhiteSpace(s[k])) k--;
+        return k < 0 || IsStop(s[k]) || s[k] is '「' or '『' or '(' or '（';
     }
 
     private static bool StartsWithFolded(string s, int i, string w)
