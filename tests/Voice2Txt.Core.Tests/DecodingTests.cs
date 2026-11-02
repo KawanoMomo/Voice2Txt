@@ -18,7 +18,16 @@ public class DecodingTests
     public void 初期プロンプトは数える列の終わりの十を数字で見せる()
     {
         // 「…ここのつ、とお。」の「とお」は「つ」が付かない短い数で、前置きが無いと「等」になる
-        Assert.EndsWith("ここのつ、10。", Decoding.InitialPrompt);
+        Assert.EndsWith("ここのつ、10", Decoding.InitialPrompt);
+    }
+
+    [Fact]
+    public void 初期プロンプトは句点で終えない()
+    {
+        // 句点(「。」だけでも)で終わるプロンプトは、文頭の四字熟語の切れ目を変える(「いちごいちえの」→「一期一への」)。
+        // 句点は言い淀みの列の終わりにだけ見せる
+        Assert.False(Decoding.InitialPrompt.EndsWith('。'));
+        Assert.Contains("えっと。", Decoding.InitialPrompt);
     }
 
     [Fact]
@@ -28,7 +37,7 @@ public class DecodingTests
         // 数字で見せるのは「つ」が付かない短い数(とお)だけにする
         var digits = new string(Decoding.InitialPrompt.Where(char.IsAsciiDigit).ToArray());
         Assert.Equal("10", digits);
-        Assert.EndsWith("10。", Decoding.InitialPrompt);
+        Assert.EndsWith("10", Decoding.InitialPrompt);
     }
 
     [Fact]
