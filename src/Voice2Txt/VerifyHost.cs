@@ -251,6 +251,7 @@ internal sealed class VerifyHost : ApplicationContext
             _fgProbe.Stop();
             _result.Textbox = textbox;
             _result.Clipboard = _clip.Text;
+            _result.Window = _fg.Name;
             _result.Runtime = _engine.Runtime;
             lock (_result) _result.Save(Path.Combine(_out, "result.json"));
         });
@@ -397,6 +398,9 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 case "focus":
                     _fg.Focus(a.Window ?? "textbox");
+                    break;
+                case "setClipboard":
+                    _clip.SetByUser(a.Value ?? "");
                     break;
                 case "lockClipboard":
                     _clip.LockFor(a.Ms ?? 0);
@@ -562,8 +566,17 @@ internal sealed class VerifyRecorder : IRecorder
 internal sealed class VirtualForeground(nint textbox) : IForegroundWindow
 {
     private volatile string _current = "textbox";
+    public string Name => _current;
     public void Focus(string window) => _current = window;
     public nint Current() => _current == "textbox" ? textbox : 1;
+
+    /// <summary>届け方 return: 仮の前面を移す(検証用のテキスト欄か、それ以外 = other)。</summary>
+    public bool Activate(nint window)
+    {
+        _current = window == textbox ? "textbox" : "other";
+        AppLog.Write($"activate window={_current}");
+        return true;
+    }
 }
 
 /// <summary>検証用のクリップボード。台本の lockClipboard の間は、他アプリが開いたままのように投げる。</summary>
@@ -572,13 +585,33 @@ internal sealed class MemoryClipboard : IClipboard
     private long _lockedUntil;
     public string? Text { get; private set; }
 
+    private long _version, _setVersion = -1;
+
     public void LockFor(int ms) => Interlocked.Exchange(ref _lockedUntil, Environment.TickCount64 + ms);
+
+    /// <summary>台本の setClipboard: 利用者が自分でコピーした。</summary>
+    public void SetByUser(string text) { Text = text; Interlocked.Increment(ref _version); }
+
+    public object? Save() => new Saved(Text);
+
+    /// <summary>最後の SetText の後に利用者がコピーしていなければ、写しへ戻す。</summary>
+    public bool Restore(object saved)
+    {
+        if (saved is not Saved s || Interlocked.Read(ref _version) != Interlocked.Read(ref _setVersion)) return false;
+        Text = s.Text;
+        Interlocked.Increment(ref _version);
+        AppLog.Write($"clipboard-restored chars={s.Text?.Length ?? 0}");
+        return true;
+    }
+
+    private sealed record Saved(string? Text);
 
     public void SetText(string text)
     {
         if (Environment.TickCount64 < Interlocked.Read(ref _lockedUntil))
             throw new System.Runtime.InteropServices.ExternalException("クリップボードを開けません(検証モードの lockClipboard)");
         Text = text;
+        Interlocked.Exchange(ref _setVersion, Interlocked.Increment(ref _version));
     }
 }
 

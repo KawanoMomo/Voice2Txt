@@ -64,6 +64,7 @@ public sealed class Scenario
 /// release(キー key を離す。省略時はトークキー)/ key(キー key を押して離す。省略時 C)/ focus(前面を window = "textbox" か "other" に切り替える)/
 /// wait(ms 待つ)/ waitIdle(処理待ちが 0 になるまで待つ)/ lockClipboard(今から ms の間、他アプリが開いたままのようにクリップボードを使えなくする)/
 /// pasteReadDelay(以後、検証用のテキスト欄が Ctrl+V を受けてから ms 後にクリップボードを読む。遅い貼り付け先。0 で即時)/
+/// setClipboard(利用者が自分でコピーしたように、クリップボードの中身を value にする)/
 /// shot(今のオーバーレイを name の名で撮り、そのときの状態・音量バーの値・途中経過の文字数と行数・案内の行の画面上の位置を結果の shots に残す)/
 /// openSettings(トレイの「設定…」と同じ設定画面を開いて撮る)/ setSetting(項目 name に値 value を入れる)/
 /// saveSettings(撮ってから保存を押す。&lt;out&gt;/settings.json に書く)/ restart(その settings.json を読み直して受け付け直す = 再起動)
@@ -105,6 +106,12 @@ public sealed class Expectation
 
     /// <summary>離してから届くまでの上限(ms)。</summary>
     public long? MaxReleaseToDeliverMs { get; set; }
+
+    /// <summary>台本の終わりのクリップボードの中身(完全一致。例: setClipboard で入れた利用者の中身が確定版で上書きされていないこと)。</summary>
+    public string? Clipboard { get; set; }
+
+    /// <summary>台本の終わりの前面のウィンドウ(textbox / other。例: 届け方 return で貼った後に元の前面へ戻っていること)。</summary>
+    public string? Window { get; set; }
 
     /// <summary>
     /// 離してから届くまでのうち文字起こし以外(releaseToDeliverMs − transcribeMs)の、届いた発話全体の中央値の上限(ms)。

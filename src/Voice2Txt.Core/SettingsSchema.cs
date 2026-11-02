@@ -52,6 +52,8 @@ public static class SettingsSchema
             SettingKind.Choice, Backends.Choices),
         new("preferSpeed", "速さを優先する", "Whisper が 1 回に読む音声の窓(30 秒)を発話の長さに縮めて文字起こしします。CPU や弱い GPU で、離してから届くまでが大きく縮みます。誤りが少し増えることがあります(既定はオフ。Haas では使いません)。",
             SettingKind.Toggle),
+        new("delivery", "届け方", "離した時に前面のウィンドウが押した時と違うとき。既定は貼らずにクリップボードへ退避します(元の欄で Ctrl+V)。「押した時のウィンドウへ戻して貼る」は、押した時のウィンドウを一瞬前面に戻して貼り、元のウィンドウへ戻します。貼った後はクリップボードを貼る前の中身に戻します。",
+            SettingKind.Choice, Deliveries.Choices),
         new("minPressSeconds", "短い押下の取り消し(秒)", "これより短くトークキーを押して離したときは、録音せずに取り消します(押し間違いの対策)。",
             SettingKind.Number, Min: 0.05, Max: 2.0, Step: 0.05, Decimals: 2),
         new("silenceThreshold", "無音のしきい値", "録音の最も大きい音がこれ未満で、雑音よりはっきり大きい声も続かなければ、無音として取り消します。小さい声が取り消されるときは下げます(0.001〜0.1)。",
@@ -81,6 +83,7 @@ public static class SettingsSchema
         "engine" => s.Engine,
         "model" => s.Model,
         "backend" => s.Backend,
+        "delivery" => s.Delivery,
         "minPressSeconds" => s.MinPressSeconds.ToString(CultureInfo.InvariantCulture),
         "silenceThreshold" => s.SilenceThreshold.ToString(CultureInfo.InvariantCulture),
         "showInterim" => s.ShowInterim ? "true" : "false",
@@ -130,6 +133,12 @@ public static class SettingsSchema
                 // 設定ファイルに手で書いた今の値はそのまま残せる(読めない値は起動時に自動として知らせる)
                 if (v.Length > 0 && string.Equals(v, s.Backend, StringComparison.OrdinalIgnoreCase)) return null;
                 return $"バックエンド「{v}」は選べません(選べるもの: {string.Join("、", Backends.Choices.Select(x => x.Label))})";
+            }
+            case "delivery":
+            {
+                if (Deliveries.Normalize(v) is { } dv && v.Length > 0) { s.Delivery = dv; return null; }
+                if (v.Length > 0 && string.Equals(v, s.Delivery, StringComparison.OrdinalIgnoreCase)) return null;
+                return $"届け方「{v}」は選べません(選べるもの: {string.Join("、", Deliveries.Choices.Select(x => x.Label))})";
             }
             case "minPressSeconds":
             case "silenceThreshold":

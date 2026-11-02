@@ -2,7 +2,7 @@
   "name": "primary-6",
   "persona": "primary",
   "step": 6,
-  "description": "退避と言い直し: 話し終える前(1.5 秒)に離してすぐ押し直して話す。2 つが別々の発話として順に届く(1 つ目は途中までの文、2 つ目は全文)。続けて離した直後に前面ウィンドウを別の窓に切り替えると、貼られずクリップボードに残り「Ctrl+V で貼れます」が出る",
+  "description": "退避と言い直し: 話し終える前(1.5 秒)に離してすぐ押し直して話す。2 つが別々の発話として順に届く(1 つ目は途中までの文、2 つ目は全文)。続けて離した直後に前面ウィンドウを別の窓に切り替えると、貼られずクリップボードに残り「Ctrl+V で貼れます」が出る。最後に自分のメモをコピーしてから設定画面で届け方を「押した時のウィンドウへ戻して貼る」(delivery: return)に替えて再起動し、話している途中で別の窓へ移って離す。確定版は押した時の入力欄に入り、前面は移った先の窓に戻り、クリップボードは自分のメモのまま",
   "timeoutMs": 600000,
   "actions": [
     { "do": "waitModel", "timeoutMs": 540000 },
@@ -20,14 +20,33 @@
     { "do": "wait", "ms": 150 },
     { "do": "release" },
     { "do": "focus", "window": "other" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "setClipboard", "value": "自分のメモ: 午後に資料を直す" },
+    { "do": "openSettings", "name": "開いた" },
+    { "do": "setSetting", "name": "delivery", "value": "押した時のウィンドウへ戻して貼る" },
+    { "do": "saveSettings", "name": "届け方を戻して貼るにした" },
+    { "do": "restart" },
+    { "do": "waitModel", "timeoutMs": 540000 },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "test-results/fixtures/utt-07.wav" },
+    { "do": "wait", "ms": 1000 },
+    { "do": "focus", "window": "other" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
     "deliveries": [
       { "to": "textbox" },
       { "to": "textbox", "text": "テストの結果を共有しますので、各自で目を通してください。", "minSimilarity": 0.8 },
-      { "to": "clipboard", "text": "この資料は後でチャットに貼り付けておきます。", "minSimilarity": 0.8 }
+      { "to": "clipboard", "text": "この資料は後でチャットに貼り付けておきます。", "minSimilarity": 0.8 },
+      { "to": "textbox", "text": "画面の配置について意見をください。", "minSimilarity": 0.8 }
     ],
+    "savedSettings": { "delivery": "return" },
+    "settingsErrors": [],
+    "clipboard": "自分のメモ: 午後に資料を直す",
+    "window": "other",
     "states": ["録音中", "処理中", "退避"],
     "stateTexts": ["Ctrl+V で貼れます"],
     "forbiddenStates": ["取り消し", "取り消し(無音)"],
