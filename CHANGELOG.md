@@ -1,6 +1,6 @@
 # CHANGELOG
 
-- BLK-primary-20261008-1123-friction: 検証モードの検証用のテキスト欄を自分の UI スレッドで動かし、オーバーレイの状態ごとのスクショが貼り付けを待たせなくなった(ショートカットを挟んでも `releaseToDeliverMs` が撮影の数だけ延びない)。台本の期待に `maxMedianDeliverOverheadMs`(離してから届くまでのうち文字起こし以外の中央値の上限)を足し、primary-2 で 30ms を見る
+- BLK-primary-20261008-1123-friction: 検証モードの検証用のテキスト欄を自分の UI スレッドで動かし、オーバーレイの状態ごとのスクショが貼り付けを待たせなくなった(ショートカットを挟んでも `releaseToDeliverMs` が撮影の数だけ延びない)。台本の期待に `maxMedianDeliverOverheadMs`(離してから届くまでのうち文字起こし以外の中央値の上限)を足し、primary-2 で 15ms を見る
 - BLK-human-20261102-1015-3: Haas エンジンで 30 秒を超える発話を、声の区間(0.5 秒の無音で区切り、10 秒まで。小さい声も録音の大きさに合わせて区間にする)ごとに文字起こししてつなぐ(1 回に文がいくつも入ると Haas が文を丸ごと落とすため)。30 秒以下は今までどおり
 - BLK-human-20261102-1015-2: 設定 `keywords`(画面の「カスタム語彙(Haas)」)に固有名詞の表記(`表記` か `表記=よみ,よみ`)を並べると、Haas エンジンの文字起こしでその表記になりやすくなる(speech.cpp の keywords を要求ごとに渡す。空なら今までどおり。読めない語は渡さず通知)。設定画面は説明の列を広げ、項目が増えても画面の高さに収まる(収まらなければ項目の欄だけ縦に送る)
 - BLK-human-20261102-1015-1: 設定 `engine` に `haas` を足し、日本語 ASR の Haas-ja-v1.0 を speech.cpp の worker(常駐、JSON Lines)で動かして文字起こしできる(既定は今までどおり `whisper`)。speech.cpp(PATH → 無ければ release を SHA-256 で確かめて取得)と重み(Q8_0、0.66 GB)を初回に用意し、トレイに「待機中(エンジン haas、モデル haas-ja-v1.0、Vulkan)」。用意できないときは Whisper に切り替えず「Haas エンジンを用意できません」と理由を通知とログに出す。設定画面に「エンジン」、検証モードに `--engine`(同じ台本を両エンジンで比べる)・`speechTool: unreachable`・`waitModelFailed`

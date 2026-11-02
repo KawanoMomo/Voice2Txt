@@ -95,6 +95,6 @@
     "passedKeys": ["C up", "RControlKey up", "V up", "RControlKey up", "Z up", "RControlKey up", "C up", "RControlKey up", "V up", "RControlKey up", "Z up", "RControlKey up", "C up", "RControlKey up", "V up", "RControlKey up", "Z up", "RControlKey up"],
     "warnings": [],
     "maxReleaseToDeliverMs": 1000,
-    "maxMedianDeliverOverheadMs": 30
+    "maxMedianDeliverOverheadMs": 15
   }
 }
