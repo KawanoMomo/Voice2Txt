@@ -327,6 +327,7 @@ internal sealed class VerifyHost : ApplicationContext
         catch (Exception ex)
         {
             AppLog.Write("engine-error " + ex.Message);
+            _ptt.SetModelStatus(false, Engines.FailedTrayStatus(_settings.Engine)); // 常駐時と同じ
             lock (_result)
             {
                 _result.EngineError = ex.Message;
