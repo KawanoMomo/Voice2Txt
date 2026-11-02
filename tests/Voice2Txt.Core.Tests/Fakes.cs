@@ -41,7 +41,17 @@ internal sealed class FakeRecorder : IRecorder
 internal sealed class FakeForeground : IForegroundWindow
 {
     public nint Window = 100;
+    /// <summary>Activate で前面を移せるか(偽なら移せず false)。</summary>
+    public bool CanActivate = true;
+    public readonly List<nint> Activated = [];
     public nint Current() => Window;
+    public bool Activate(nint window)
+    {
+        lock (Activated) Activated.Add(window);
+        if (!CanActivate) return false;
+        Window = window;
+        return true;
+    }
 }
 
 /// <summary>FailTimes 回だけ(負なら常に)他アプリが開いたままのように投げる。</summary>
@@ -56,7 +66,24 @@ internal sealed class FakeClipboard : IClipboard
         int n = Interlocked.Increment(ref Attempts);
         if (FailTimes < 0 || n <= FailTimes) throw new System.Runtime.InteropServices.ExternalException("クリップボードを開けません");
         Text = text;
+        SetVersion = ++Version;
     }
+
+    /// <summary>中身が変わるたびに増える(利用者のコピーは UserCopy で)。</summary>
+    public int Version, SetVersion = -1, Restored;
+
+    public void UserCopy(string text) { Text = text; Version++; }
+
+    public object? Save() => new Box(Text);
+
+    public bool Restore(object saved)
+    {
+        if (Version != SetVersion) return false;
+        Text = ((Box)saved).Text; Version++; Restored++;
+        return true;
+    }
+
+    private sealed record Box(string? Text);
 }
 
 /// <summary>貼り付け先: Ctrl+V が来たら、その時点のクリップボードの中身を前面ウィンドウに貼ったことにする。</summary>

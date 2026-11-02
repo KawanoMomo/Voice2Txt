@@ -44,6 +44,15 @@ internal static class Native
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(nint hwnd);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(nint hwnd, out RECT rect);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(nint hwnd, out uint pid);
+    public const int SW_RESTORE = 9;
+    [DllImport("user32.dll")] public static extern bool IsWindow(nint hwnd);
+    [DllImport("user32.dll")] public static extern bool IsIconic(nint hwnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(nint hwnd, int cmd);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(nint hwnd);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(nint hwnd);
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint attach, uint attachTo, bool on);
+    [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
 
     public static INPUT Key(ushort vk, bool up)
     {

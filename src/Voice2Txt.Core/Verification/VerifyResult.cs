@@ -39,6 +39,9 @@ public sealed class VerifyResult
     public string Textbox { get; set; } = "";
     public string? Clipboard { get; set; }
 
+    /// <summary>台本の終わりの(検証モードの仮の)前面のウィンドウ(textbox / other)。</summary>
+    public string? Window { get; set; }
+
     /// <summary>トークキーの判定で操作中のアプリへ素通ししたキー("RControlKey down" の形。順に)。</summary>
     public List<string> PassedKeys { get; set; } = [];
 
@@ -267,6 +270,10 @@ public static class Evaluator
         if (e.TrayTooltip is { } tt)
             foreach (var w in tt.Where(w => r.TrayTooltip is null || !r.TrayTooltip.Contains(w)))
                 fails.Add($"トレイのツールチップ「{r.TrayTooltip}」に「{w}」が無い");
+        if (e.Clipboard is { } cb && cb != r.Clipboard)
+            fails.Add($"クリップボードの中身が期待と違う(期待 {cb.Length} 文字、実際 {r.Clipboard?.Length ?? 0} 文字{(r.Clipboard is not null && r.Deliveries.Any(d => d.Text == r.Clipboard) ? "。確定版で上書きされた" : "")})");
+        if (e.Window is { } win && !string.Equals(win, r.Window, StringComparison.OrdinalIgnoreCase))
+            fails.Add($"終わりの前面のウィンドウ {r.Window ?? "(不明)"}(期待 {win})");
         if (e.MaxReleaseToDeliverMs is { } max)
             foreach (var d in r.Deliveries.Where(d => d.ReleaseToDeliverMs > max))
                 fails.Add($"{d.Seq} 番の発話: 離してから届くまで {d.ReleaseToDeliverMs} ms(上限 {max})");

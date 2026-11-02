@@ -46,6 +46,12 @@ public sealed class AppSettings
     public string Backend { get; set; } = Backends.Auto;
 
     /// <summary>
+    /// 届け方(<see cref="Deliveries"/>): evacuate(初期値。離した時点の前面が押した時点と違えば貼らずにクリップボードへ退避)/
+    /// return(押した時点のウィンドウを前面に戻して貼り、元の前面へ戻し、クリップボードを貼る前の中身に戻す)。
+    /// </summary>
+    public string Delivery { get; set; } = Deliveries.Evacuate;
+
+    /// <summary>
     /// 速さを優先する(初期値オフ。engine が whisper のとき)。オンなら whisper のエンコーダが読む窓を 30 秒から発話の長さに縮め(<see cref="Decoding.AudioContext"/>)、
     /// CPU・弱い GPU で離してから届くまでを縮める。誤りが少し増えることがある。
     /// </summary>
@@ -91,7 +97,7 @@ public sealed class AppSettings
     {
         TalkKey = o.TalkKey; Engine = o.Engine; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
         AutoStart = o.AutoStart; RemoveFillers = o.RemoveFillers; Fillers = [.. o.Fillers ?? []]; Keywords = [.. o.Keywords ?? []]; ShowInterim = o.ShowInterim;
-        FetchCudaRuntime = o.FetchCudaRuntime; Backend = o.Backend; PreferSpeed = o.PreferSpeed;
+        FetchCudaRuntime = o.FetchCudaRuntime; Backend = o.Backend; Delivery = o.Delivery; PreferSpeed = o.PreferSpeed;
     }
 
     public void Save(string path)

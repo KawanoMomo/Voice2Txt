@@ -84,7 +84,7 @@ internal sealed class TrayApp : ApplicationContext
         _tray.ContextMenuStrip = menu;
 
         _ptt = new PushToTalkController(
-            new PttDependencies(new WaveInRecorder(), new Win32Foreground(), new Win32Clipboard(_overlay), new CtrlVSender(), _engine, new SystemClock()),
+            new PttDependencies(new WaveInRecorder(), new Win32Foreground(_overlay), new Win32Clipboard(_overlay), new CtrlVSender(), _engine, new SystemClock()),
             PttOptions.From(settings));
         _ptt.OverlayChanged += v => _overlay.BeginInvoke(() =>
         {

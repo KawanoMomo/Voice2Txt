@@ -28,11 +28,23 @@ public interface IRecording
 public interface IForegroundWindow
 {
     nint Current();
+
+    /// <summary>そのウィンドウを前面にする(届け方 return)。前面にできたら true。既定は何もせず false(退避になる)。</summary>
+    bool Activate(nint window) => false;
 }
 
 public interface IClipboard
 {
     void SetText(string text);
+
+    /// <summary>今の中身の写し(届け方 return で、貼った後に元へ戻すため)。写せなければ null。既定は null。</summary>
+    object? Save() => null;
+
+    /// <summary>
+    /// <see cref="Save"/> の写しへ戻す。最後の <see cref="SetText"/> の後に他から書き換えられていれば戻さない(利用者が今コピーしたものを消さない)。
+    /// 戻せたら true。既定は何もせず false。
+    /// </summary>
+    bool Restore(object saved) => false;
 }
 
 /// <summary>Ctrl+V を送る。</summary>

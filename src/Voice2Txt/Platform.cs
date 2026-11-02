@@ -42,19 +42,80 @@ internal sealed class WaveInRecorder : IRecorder
     }
 }
 
-internal sealed class Win32Foreground : IForegroundWindow
+/// <param name="ui">前面を移す処理を走らせる UI スレッド(入力の待ち行列を持つスレッド)。</param>
+internal sealed class Win32Foreground(Control ui) : IForegroundWindow
 {
     public nint Current() => Native.GetForegroundWindow();
+
+    /// <summary>
+    /// 届け方 return: そのウィンドウを前面にする。背後のアプリは前面を奪えないので、今の前面と相手のスレッドの入力に一時的につないでから移す。
+    /// 移ったかは前面を確かめて返す(移れなければ呼び出し側が退避する)。
+    /// </summary>
+    public bool Activate(nint window) => ui.Invoke(() =>
+    {
+        if (!Native.IsWindow(window)) return false;
+        nint fg = Native.GetForegroundWindow();
+        if (fg == window) return true;
+        uint me = Native.GetCurrentThreadId();
+        uint fgThread = fg == 0 ? 0 : Native.GetWindowThreadProcessId(fg, out _);
+        uint toThread = Native.GetWindowThreadProcessId(window, out _);
+        bool a1 = fgThread != 0 && fgThread != me && Native.AttachThreadInput(me, fgThread, true);
+        bool a2 = toThread != 0 && toThread != me && toThread != fgThread && Native.AttachThreadInput(me, toThread, true);
+        try
+        {
+            if (Native.IsIconic(window)) Native.ShowWindow(window, Native.SW_RESTORE);
+            Native.BringWindowToTop(window);
+            Native.SetForegroundWindow(window);
+        }
+        finally
+        {
+            if (a2) Native.AttachThreadInput(me, toThread, false);
+            if (a1) Native.AttachThreadInput(me, fgThread, false);
+        }
+        for (int i = 0; i < 20 && Native.GetForegroundWindow() != window; i++) Thread.Sleep(10);
+        bool ok = Native.GetForegroundWindow() == window;
+        AppLog.Write($"activate ok={ok}");
+        return ok;
+    });
 }
 
 /// <summary>
-/// クリップボードは STA の UI スレッドで触る。元の内容には戻さない(Win+V の履歴で取り出す運用)。
+/// クリップボードは STA の UI スレッドで触る。既定の届け方では元の内容には戻さない(Win+V の履歴で取り出す運用)。届け方 return では貼った後に戻す。
 /// 1 回の呼び出しでは短く試すだけにし(UI を止めない)、入らなければ投げる。粘るのは PushToTalkController。
 /// </summary>
 internal sealed class Win32Clipboard(Control ui) : IClipboard
 {
+    private uint _afterSet; // 最後に確定版を入れた直後のクリップボードの通し番号
+
     public void SetText(string text) => ui.Invoke(() =>
-        Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), copy: true, retryTimes: 3, retryDelay: 20));
+    {
+        Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), copy: true, retryTimes: 3, retryDelay: 20);
+        _afterSet = Native.GetClipboardSequenceNumber();
+    });
+
+    /// <summary>届け方 return: 今の中身を形式ごとに写す(読めない形式は写さない)。空なら空の写し。</summary>
+    public object? Save() => ui.Invoke(() =>
+    {
+        var copy = new DataObject();
+        var src = Clipboard.GetDataObject();
+        if (src is null) return (object)copy;
+        foreach (var f in src.GetFormats(autoConvert: false))
+        {
+            try { if (src.GetData(f, autoConvert: false) is { } d) copy.SetData(f, d); }
+            catch (Exception) { } // 遅延描画などで読めない形式は写さない
+        }
+        return copy;
+    });
+
+    /// <summary>確定版を入れた後に誰も書き換えていなければ、写しへ戻す(利用者がその間にコピーしたものは消さない)。</summary>
+    public bool Restore(object saved) => ui.Invoke(() =>
+    {
+        if (saved is not DataObject d || Native.GetClipboardSequenceNumber() != _afterSet) return false;
+        if (d.GetFormats().Length == 0) Clipboard.Clear();
+        else Clipboard.SetDataObject(d, copy: true, retryTimes: 3, retryDelay: 20);
+        AppLog.Write($"clipboard-restored formats={d.GetFormats().Length}");
+        return true;
+    });
 }
 
 internal sealed class CtrlVSender : IPasteSender
