@@ -75,7 +75,7 @@ public sealed class ScenarioAction
     public string? Audio { get; set; }
     public int? Ms { get; set; }
     public int? TimeoutMs { get; set; }
-    /// <summary>キーの名前(System.Windows.Forms.Keys の名前。例 RControlKey, RMenu, C)。キーはトークキーの判定に通す。</summary>
+    /// <summary>キーの名前(System.Windows.Forms.Keys の名前。例 RControlKey, RMenu, C)。キーはトークキーの判定に通す。key の手では「Ctrl+V」のような組み合わせも書ける。</summary>
     public string? Key { get; set; }
     public string? Window { get; set; }
     /// <summary>shot・openSettings・saveSettings の名前(期待の shots と結び付ける)。setSetting では項目のキー(例 talkKey)。</summary>

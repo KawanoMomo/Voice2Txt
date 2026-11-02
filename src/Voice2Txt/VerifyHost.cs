@@ -201,6 +201,44 @@ internal sealed class VerifyHost : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// 台本の key: キーを押して離す。「Ctrl+V」のように + でつないだ組み合わせは、修飾キー(Ctrl / Shift / Alt)を押したまま最後のキーを押して離し、修飾キーを離す
+    /// (どのキーもトークキーの判定に通す。修飾キーはトークキーでない側の左右を使う)。
+    /// 検証用のテキスト欄が前面のときの Ctrl+V は、利用者の貼り付けとして検証のクリップボードの中身を欄のカーソル位置へ入れる。
+    /// </summary>
+    private void KeyChord(string chord)
+    {
+        var parts = chord.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) throw new InvalidDataException($"キーの名前を読めない: {chord}");
+        var mods = parts[..^1].Select(Modifier).ToArray();
+        var last = parts[^1];
+        foreach (var m in mods) Key(m, down: true);
+        Key(last, down: true);
+        Key(last, down: false);
+        foreach (var m in mods.Reverse()) Key(m, down: false);
+        bool ctrlV = mods.Length == 1 && mods[0].EndsWith("ControlKey", StringComparison.Ordinal) && last.Equals("V", StringComparison.OrdinalIgnoreCase);
+        if (ctrlV && _fg.Name == "textbox")
+        {
+            var text = _clip.Text ?? "";
+            _textForm.Invoke(() => _textForm.Box.SelectedText = text);
+            AppLog.Write($"user-paste chars={text.Length}"); // 本文は書かない
+        }
+    }
+
+    /// <summary>修飾キーの名前(Ctrl / Shift / Alt。Keys の名前も可)を、トークキーでない側の左右のキーに。</summary>
+    private string Modifier(string name)
+    {
+        (Keys l, Keys r) = name.ToLowerInvariant() switch
+        {
+            "ctrl" or "control" => (Keys.LControlKey, Keys.RControlKey),
+            "shift" => (Keys.LShiftKey, Keys.RShiftKey),
+            "alt" or "menu" => (Keys.LMenu, Keys.RMenu),
+            _ => (Keys.None, Keys.None),
+        };
+        if (l == Keys.None) return name;
+        return (_talkKey == l ? r : l).ToString();
+    }
+
     /// <summary>本物の前面ウィンドウを調べて数える(UI スレッド)。</summary>
     private string ProbeForeground()
     {
@@ -393,8 +431,7 @@ internal sealed class VerifyHost : ApplicationContext
                     Key(a.Key, down: false);
                     break;
                 case "key":
-                    Key(a.Key ?? "C", down: true);
-                    Key(a.Key ?? "C", down: false);
+                    KeyChord(a.Key ?? "C");
                     break;
                 case "focus":
                     _fg.Focus(a.Window ?? "textbox");
