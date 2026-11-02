@@ -270,6 +270,16 @@ public static class Evaluator
         if (e.MaxReleaseToDeliverMs is { } max)
             foreach (var d in r.Deliveries.Where(d => d.ReleaseToDeliverMs > max))
                 fails.Add($"{d.Seq} 番の発話: 離してから届くまで {d.ReleaseToDeliverMs} ms(上限 {max})");
+        if (e.MaxMedianDeliverOverheadMs is { } maxOver)
+        {
+            var over = r.Deliveries.Where(d => d.ReleaseToDeliverMs is not null && d.TranscribeMs is not null)
+                .Select(d => d.ReleaseToDeliverMs!.Value - d.TranscribeMs!.Value).Order().ToList();
+            if (over.Count > 0)
+            {
+                double med = over.Count % 2 == 1 ? over[over.Count / 2] : (over[over.Count / 2 - 1] + over[over.Count / 2]) / 2.0;
+                if (med > maxOver) fails.Add($"離してから届くまでのうち文字起こし以外の中央値 {med} ms(上限 {maxOver})");
+            }
+        }
         if (e.Screenshots is { } shots)
             foreach (var s in shots)
             {

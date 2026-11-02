@@ -22,7 +22,8 @@ internal sealed class VerifyHost : ApplicationContext
     private AppSettings _settings;
     private Keys _talkKey;
     private TalkKeyFilter _keys;
-    private readonly VerifyTextForm _textForm;
+    private readonly VerifyTextForm _textForm; // 自分の UI スレッドで動く(オーバーレイのスクショの後ろで貼り付けを待たせない)
+    private readonly nint _textHandle;
     private readonly OverlayForm _overlay;
     private readonly VerifyRecorder _recorder = new();
     private readonly VirtualForeground _fg;
@@ -57,11 +58,10 @@ internal sealed class VerifyHost : ApplicationContext
         if (engine is not null) _settings.Engine = engine;
         (_talkKey, _keys) = TalkKeyOf(_settings);
 
-        _textForm = new VerifyTextForm();
-        _textForm.Show();
+        (_textForm, _textHandle) = VerifyTextForm.StartOnOwnThread();
         _overlay = new OverlayForm(TalkKeys.DisplayName(_talkKey), () => _ptt?.InputLevel ?? 0);
         _ = _overlay.Handle;
-        _fg = new VirtualForeground(_textForm.Handle);
+        _fg = new VirtualForeground(_textHandle);
 
         _paster = new TextBoxPaster(_textForm, _clip);
         _ptt = CreatePtt();
@@ -205,7 +205,7 @@ internal sealed class VerifyHost : ApplicationContext
     private string ProbeForeground()
     {
         nint h = Native.GetForegroundWindow();
-        string who = h == _overlay.Handle ? "overlay" : h == _textForm.Handle ? "textbox" : "other";
+        string who = h == _overlay.Handle ? "overlay" : h == _textHandle ? "textbox" : "other";
         lock (_result)
         {
             _result.ForegroundSamples++;
@@ -245,10 +245,11 @@ internal sealed class VerifyHost : ApplicationContext
         else _result.Completed = true;
         await Task.WhenAny(_paster.DrainAsync(), Task.Delay(10_000));
         await Task.Delay(300);
+        string textbox = _textForm.Invoke(() => _textForm.Box.Text);
         _overlay.Invoke(() =>
         {
             _fgProbe.Stop();
-            _result.Textbox = _textForm.Box.Text;
+            _result.Textbox = textbox;
             _result.Clipboard = _clip.Text;
             _result.Runtime = _engine.Runtime;
             lock (_result) _result.Save(Path.Combine(_out, "result.json"));
@@ -259,6 +260,7 @@ internal sealed class VerifyHost : ApplicationContext
         if (_fetchDir is not null)
             try { Directory.Delete(_fetchDir, true); }
             catch (Exception ex) { AppLog.Write("model-prep cleanup-error " + ex.Message); }
+        _textForm.BeginInvoke(() => { _textForm.Close(); Application.ExitThread(); });
         _overlay.BeginInvoke(ExitThread);
     }
 
@@ -455,10 +457,39 @@ internal sealed class VerifyHost : ApplicationContext
     }
 }
 
-/// <summary>検証用のテキスト欄(貼り付け先ウィンドウの代わり)。</summary>
+/// <summary>
+/// 検証用のテキスト欄(貼り付け先ウィンドウの代わり)。本物の貼り付け先は別のプロセスなので、オーバーレイと同じ UI スレッドに置かず
+/// 自分の UI スレッドで動かす(オーバーレイの状態ごとのスクショが貼り付けを待たせ、離してから貼り付けまでを延ばさない)。
+/// </summary>
 internal sealed class VerifyTextForm : Form
 {
     public TextBox Box { get; } = new() { Multiline = true, Dock = DockStyle.Fill, Font = new Font("Yu Gothic UI", 11f) };
+
+    /// <summary>専用の STA スレッドでテキスト欄を作って表示し、そのスレッドでメッセージループを回す。窓のハンドルも返す(他のスレッドから Handle を読まない)。</summary>
+    public static (VerifyTextForm Form, nint Handle) StartOnOwnThread()
+    {
+        VerifyTextForm? form = null;
+        nint handle = 0;
+        Exception? error = null;
+        using var ready = new ManualResetEventSlim();
+        var t = new Thread(() =>
+        {
+            try
+            {
+                form = new VerifyTextForm();
+                form.Show();
+                handle = form.Handle;
+            }
+            catch (Exception ex) { error = ex; }
+            finally { ready.Set(); }
+            if (error is null) Application.Run();
+        }) { IsBackground = true, Name = "verify-textbox" };
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+        ready.Wait();
+        if (error is not null) throw new InvalidOperationException("検証用のテキスト欄を開けない", error);
+        return (form!, handle);
+    }
 
     public VerifyTextForm()
     {

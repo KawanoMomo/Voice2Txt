@@ -106,6 +106,12 @@ public sealed class Expectation
     /// <summary>離してから届くまでの上限(ms)。</summary>
     public long? MaxReleaseToDeliverMs { get; set; }
 
+    /// <summary>
+    /// 離してから届くまでのうち文字起こし以外(releaseToDeliverMs − transcribeMs)の、届いた発話全体の中央値の上限(ms)。
+    /// 検証モードの撮影などが貼り付けを待たせて計測を歪めていないかを見る(中央値なので 1 本の揺れでは落ちない)。
+    /// </summary>
+    public long? MaxMedianDeliverOverheadMs { get; set; }
+
     /// <summary>読めていなければならない文字起こしのバックエンド(Cuda / Vulkan / Cpu)。台本の settings.backend で選ぶ。</summary>
     public string? Runtime { get; set; }
 
