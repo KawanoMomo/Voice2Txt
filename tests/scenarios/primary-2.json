@@ -94,6 +94,7 @@
     "sentKeys": ["RControlKey down", "C down", "RControlKey down", "V down", "RControlKey down", "Z down", "RControlKey down", "C down", "RControlKey down", "V down", "RControlKey down", "Z down", "RControlKey down", "C down", "RControlKey down", "V down", "RControlKey down", "Z down"],
     "passedKeys": ["C up", "RControlKey up", "V up", "RControlKey up", "Z up", "RControlKey up", "C up", "RControlKey up", "V up", "RControlKey up", "Z up", "RControlKey up", "C up", "RControlKey up", "V up", "RControlKey up", "Z up", "RControlKey up"],
     "warnings": [],
-    "maxReleaseToDeliverMs": 1000
+    "maxReleaseToDeliverMs": 1000,
+    "maxMedianDeliverOverheadMs": 15
   }
 }
