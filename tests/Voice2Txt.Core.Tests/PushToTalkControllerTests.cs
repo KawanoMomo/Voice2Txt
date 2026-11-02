@@ -331,6 +331,7 @@ public class PushToTalkControllerTests
         var v = r.Ptt.CurrentView;
         Assert.Equal(OverlayState.ModelPreparing, v.State);
         Assert.True(v.Unavailable);
+        Assert.Equal("使えない", v.Label); // ログ・検証モードの結果・スクショ名も「準備中」と読ませない
         var text = v.Text("右Ctrl");
         Assert.DoesNotContain("準備中", text);
         Assert.DoesNotContain("完了まで", text);

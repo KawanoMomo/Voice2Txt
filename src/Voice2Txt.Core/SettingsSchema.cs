@@ -50,7 +50,7 @@ public static class SettingsSchema
     [
         new("talkKey", "トークキー", "押している間だけ録音し、離すと文字起こしして貼り付けるキー。押している間に他のキーを押すと取り消しになり、そのキーとの組み合わせ(例 右Ctrl+C)として送られます。",
             SettingKind.Choice, TalkKeyChoices),
-        new("engine", "エンジン", "文字起こしのエンジン。Whisper(既定)か、日本語専用の Haas-ja-v1.0(speech.cpp で動かす。初回に speech.cpp と重み 0.66 GB を取得)。Haas を用意できないときは Whisper に切り替えず、理由をトレイに出します。",
+        new("engine", "エンジン", "文字起こしのエンジン。Whisper(既定)か、日本語専用の Haas-ja-v1.0(speech.cpp で動かす。初回に speech.cpp と重み 0.66 GB を取得)。Haas を用意できないときは Whisper に切り替えず、理由をトレイに出します(トークキーを押せばオーバーレイにも理由と直し方が出ます)。",
             SettingKind.Choice, Engines.Choices),
         new("model", "モデル", OnlyFor(Engines.Whisper, "文字起こしに使うモデル。大きいほど正確で、用意(初回のダウンロード)と処理に時間がかかります。"),
             SettingKind.Choice, ModelChoices),
