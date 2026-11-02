@@ -76,6 +76,12 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
         _ => null,
     };
 
+    /// <summary>
+    /// モデル準備中・使えないときに押して離した後も、その知らせを出しておくミリ秒(押している間は出し続ける)。
+    /// 使えない理由と直し方は長いので、入力失敗の知らせと同じだけ出す。準備中の進み具合は退避の知らせと同じだけ。
+    /// </summary>
+    public static int ModelNoticeMs(bool unavailable) => unavailable ? 6000 : 4000;
+
     /// <summary>オーバーレイに出す本文(MOC の文言)。</summary>
     public string Text(string talkKeyName) => State switch
     {
