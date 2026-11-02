@@ -86,6 +86,7 @@ internal sealed class OverlayForm : Form
         if (!Visible) Show();
         _anim.Enabled = v.State is OverlayState.Recording or OverlayState.ProcessingAndRecording or OverlayState.Processing
             or OverlayState.ModelPreparing or OverlayState.Preparing;
+        if (v.Unavailable) _anim.Enabled = false; // 用意に失敗して終わっている: 回る印で待たせない
         if (v.TransientMs is { } ms) { _hide.Interval = ms; _hide.Start(); }
         Invalidate();
     }
@@ -181,6 +182,9 @@ internal sealed class OverlayForm : Form
             case OverlayState.Recording or OverlayState.ProcessingAndRecording:
                 float s = 10 + 3 * (float)Math.Abs(Math.Sin(_tick * 0.35));
                 using (var b = new SolidBrush(Rec)) g.FillEllipse(b, x + 5 - s / 2, cy - s / 2, s, s);
+                break;
+            case OverlayState.ModelPreparing when v.Unavailable:
+                TextRenderer.DrawText(g, "!", Font, new Point(x + 2, cy - Font.Height / 2), Warn);
                 break;
             case OverlayState.Processing or OverlayState.ModelPreparing:
                 using (var pen = new Pen(Color.White, 2)) g.DrawArc(pen, x, cy - 6, 12, 12, _tick * 40 % 360, 270);

@@ -319,6 +319,43 @@ public class PushToTalkControllerTests
         Assert.Equal(OverlayState.Hidden, r.Ptt.CurrentView.State);
     }
 
+    [Theory]
+    [InlineData("haas", "設定のエンジンを Whisper に戻すか、取得できる状態にして再起動してください")]
+    [InlineData("whisper", "取得できる状態にして再起動してください")]
+    public async Task 用意に失敗した後に押すと_待たせず使えないことと直し方を出し_録音しない(string engine, string fix)
+    {
+        await using var r = new Rig(modelReady: false);
+        r.Ptt.SetModelStatus(false, "ダウンロード 42%");
+        r.Ptt.SetModelFailed(Engines.FailedOverlayText(engine));
+        r.Ptt.OnTalkKeyDown();
+        var v = r.Ptt.CurrentView;
+        Assert.Equal(OverlayState.ModelPreparing, v.State);
+        Assert.True(v.Unavailable);
+        var text = v.Text("右Ctrl");
+        Assert.DoesNotContain("準備中", text);
+        Assert.DoesNotContain("完了まで", text);
+        Assert.Contains("音声入力は使えません", text);
+        Assert.Contains(fix, text);
+        r.Clock.NowMs += 1000;
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.Equal(CancelReason.ModelNotReady, Assert.Single(r.Reports).Reason);
+        Assert.Equal(0, r.Engine.Calls);
+    }
+
+    [Fact]
+    public async Task 用意し直して進み具合が届けば_準備中の表示に戻る()
+    {
+        await using var r = new Rig(modelReady: false);
+        r.Ptt.SetModelFailed(Engines.FailedOverlayText("haas"));
+        r.Ptt.SetModelStatus(false, "ダウンロード 10%");
+        r.Ptt.OnTalkKeyDown();
+        Assert.Equal(new OverlayView(OverlayState.ModelPreparing, 0, "ダウンロード 10%"), r.Ptt.CurrentView);
+        Assert.Contains("完了まで", r.Ptt.CurrentView.Text("右Ctrl"));
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+    }
+
     [Fact]
     public async Task 貼り付け先ウィンドウは押した時点の前面ウィンドウ()
     {

@@ -46,6 +46,14 @@ public static class Engines
 
     /// <summary>エンジンを用意できなかったときのトレイのツールチップの本文。</summary>
     public static string FailedTrayStatus(string? engine) => IsHaas(engine) ? "Haas エンジンを用意できません" : "モデルを用意できません";
+
+    /// <summary>
+    /// 用意に失敗した後にトークキーが押されたときのオーバーレイの一行(使えないことと直し方)。用意は終わっており再起動まで完了しないので、
+    /// 「準備中」「完了まで」の語で待たせない。
+    /// </summary>
+    public static string FailedOverlayText(string? engine) => IsHaas(engine)
+        ? "Haas エンジンを用意できないため音声入力は使えません — 設定のエンジンを Whisper に戻すか、取得できる状態にして再起動してください"
+        : "モデルを用意できないため音声入力は使えません — モデルを取得できる状態にして再起動してください";
 }
 
 /// <summary>エンジンを用意できない理由(利用者に見せる文。トレイの通知・ログ・検証モードの結果に出す)。</summary>

@@ -120,6 +120,7 @@ internal sealed class VerifyHost : ApplicationContext
             _modelReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _ = LoadEngineAsync();
         }
+        else if (_modelReady.Task.IsFaulted) _ptt.SetModelFailed(Engines.FailedOverlayText(_settings.Engine)); // 用意の失敗は起動し直しても続く
         else _ptt.SetModelStatus(_modelReady.Task.IsCompletedSuccessfully);
     }
 
@@ -373,7 +374,7 @@ internal sealed class VerifyHost : ApplicationContext
         catch (Exception ex)
         {
             AppLog.Write("engine-error " + ex.Message);
-            _ptt.SetModelStatus(false, Engines.FailedTrayStatus(_settings.Engine)); // 常駐時と同じ
+            _ptt.SetModelFailed(Engines.FailedOverlayText(_settings.Engine)); // 常駐時と同じ
             lock (_result)
             {
                 _result.EngineError = ex.Message;

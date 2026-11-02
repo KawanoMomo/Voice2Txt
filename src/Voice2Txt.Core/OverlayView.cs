@@ -21,6 +21,12 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
 {
     public static readonly OverlayView Hidden = new(OverlayState.Hidden);
 
+    /// <summary>
+    /// モデル準備中の表示のうち、用意に失敗して終わっている(再起動まで使えない)もの。本文は <see cref="Detail"/>(使えないことと直し方)をそのまま出し、
+    /// 待たせる語(「準備中」「完了まで」)を出さない。状態の名前(<see cref="Label"/>)は「モデル準備中」のまま。
+    /// </summary>
+    public bool Unavailable { get; init; }
+
     /// <summary>途中経過の欄に収める最大の行数。超えたら頭を削り、末尾(いま話している所)を残す。</summary>
     public const int InterimMaxLines = 3;
 
@@ -78,6 +84,7 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
         OverlayState.Evacuated => "ウィンドウが変わったため貼り付けませんでした — Ctrl+V で貼れます",
         OverlayState.CancelledSilence => "音声が検出されませんでした",
         OverlayState.Cancelled => $"取り消しました({Detail ?? "押す時間が短すぎます"})",
+        OverlayState.ModelPreparing when Unavailable => Detail ?? "モデルを用意できないため音声入力は使えません",
         OverlayState.ModelPreparing => $"モデル準備中{(Detail is null ? "" : $"({Detail})")} — 完了まで音声入力は使えません",
         OverlayState.DeliveryFailed => "他のアプリがクリップボードを使用中のため入力できませんでした — もう一度話してください",
         _ => "",
