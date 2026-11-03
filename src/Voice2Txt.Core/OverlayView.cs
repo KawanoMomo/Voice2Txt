@@ -83,10 +83,12 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
     public static int ModelNoticeMs(bool unavailable) => unavailable ? 6000 : 4000;
 
     /// <summary>オーバーレイに出す本文(MOC の文言)。</summary>
-    public string Text(string talkKeyName) => State switch
+    /// <param name="talkKeyName">録音を止めるキーの名前(トークキー。押さない録音では終了キーの組み合わせ)。</param>
+    /// <param name="toggle">押さない録音(録音中は「{終了キー} で入力」。押している間だけ録音なら「{トークキー} を離すと入力」)。</param>
+    public string Text(string talkKeyName, bool toggle = false) => State switch
     {
         OverlayState.Preparing => "準備中…  赤い点が出てから話してください",
-        OverlayState.Recording => $"録音中  {talkKeyName} を離すと入力",
+        OverlayState.Recording => $"録音中  {talkKeyName} {StopVerb(toggle)}",
         OverlayState.Processing => "文字起こし中…",
         OverlayState.ProcessingAndRecording => $"録音中  処理待ち {PendingCount}件",
         OverlayState.Pasted => "入力しました",
@@ -103,15 +105,17 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
     /// 本文を MOC の並び・色で描くための部品列(状態の印 ●・✓・! の後ろに左から並べる)。
     /// 部品の文字をつなぐと(空白を除いて)<see cref="Text"/> と同じになる。音量バーは文字を持たない。
     /// </summary>
-    public IReadOnlyList<OverlayPart> Parts(string talkKeyName) => State switch
+    public IReadOnlyList<OverlayPart> Parts(string talkKeyName, bool toggle = false) => State switch
     {
         OverlayState.Preparing => [new(OverlayPartKind.Text, "準備中…"), new(OverlayPartKind.Note, "赤い点が出てから話してください")],
-        OverlayState.Recording => [new(OverlayPartKind.Text, "録音中"), OverlayPart.Meter, new(OverlayPartKind.Key, talkKeyName), new(OverlayPartKind.Text, "を離すと入力")],
+        OverlayState.Recording => [new(OverlayPartKind.Text, "録音中"), OverlayPart.Meter, new(OverlayPartKind.Key, talkKeyName), new(OverlayPartKind.Text, StopVerb(toggle))],
         OverlayState.ProcessingAndRecording => [new(OverlayPartKind.Text, "録音中"), OverlayPart.Meter, new(OverlayPartKind.Badge, $"処理待ち {PendingCount}件")],
         OverlayState.Evacuated => [new(OverlayPartKind.Text, "ウィンドウが変わったため貼り付けませんでした —"), new(OverlayPartKind.Key, "Ctrl+V"), new(OverlayPartKind.Text, "で貼れます")],
         OverlayState.Hidden => [],
-        _ => [new(OverlayPartKind.Text, Text(talkKeyName))],
+        _ => [new(OverlayPartKind.Text, Text(talkKeyName, toggle))],
     };
+
+    private static string StopVerb(bool toggle) => toggle ? "で入力" : "を離すと入力";
 }
 
 /// <summary>オーバーレイの本文の部品の種類(MOC の CSS に対応)。</summary>

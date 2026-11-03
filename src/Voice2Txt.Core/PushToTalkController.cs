@@ -149,6 +149,21 @@ public sealed class PushToTalkController : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 押さない録音の開始キー: 押下と同じく録音を始める。モデル準備中・使えないなら録音せず、離したときと同じく知らせをしばらく出して消し、false を返す
+    /// (呼び出し側は次の開始キーをもう一度開始として受ける。終了キーを押すまで知らせを出し続けない)。
+    /// </summary>
+    public bool OnToggleStart()
+    {
+        lock (_gate)
+        {
+            OnTalkKeyDown();
+            if (!_modelHeld) return true;
+            OnTalkKeyUp();
+            return false;
+        }
+    }
+
     /// <summary>トークキーを押している間に別のキーが押された。発話は取り消し(キーは修飾キーとして通すのはホストの役目)。</summary>
     public void OnOtherKeyDown()
     {
