@@ -203,5 +203,8 @@ public sealed class TextExpectation
     /// <summary>届いた文字列に入っていなければならない語(例: 発話の途中に挟まった英文。大文字小文字は問わない)。省略可。</summary>
     public List<string>? Contains { get; set; }
 
+    /// <summary>届いた文字列の終わり(完全一致。例: 言い切った発話は「。」、途中で止めた発話は「、」。発話の繋ぎ目が確定版だけで分かるか)。省略可。</summary>
+    public string? EndsWith { get; set; }
+
     [JsonIgnore] public double Threshold => MinSimilarity ?? 1.0;
 }

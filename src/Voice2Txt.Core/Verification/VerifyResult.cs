@@ -204,6 +204,8 @@ public static class Evaluator
                 }
                 foreach (var w in Absent(x, got.Text)) fails.Add($"{i + 1} 件目に「{w}」が残っている");
                 foreach (var w in Missing(x, got.Text)) fails.Add($"{i + 1} 件目に「{w}」が無い");
+                if (x.EndsWith is { Length: > 0 } end && !got.Text.EndsWith(end, StringComparison.Ordinal))
+                    fails.Add($"{i + 1} 件目の終わりが「{end}」でない(終わり「{(got.Text.Length > 0 ? got.Text[^1..] : "")}」)");
             }
             for (int i = 1; i < r.Deliveries.Count; i++)
                 if (r.Deliveries[i].Seq < r.Deliveries[i - 1].Seq) fails.Add("届いた順が録音した順と違う");
