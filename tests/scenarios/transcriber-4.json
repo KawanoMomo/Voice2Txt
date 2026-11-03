@@ -2,7 +2,7 @@
   "name": "transcriber-4",
   "persona": "transcriber",
   "step": 4,
-  "description": "届け方: 平叙文・質問文・途中で止めた発話の 3 本を 2 回続けて話す(engine=haas)。確定版だけが届き、発話の繋ぎ目が確定版の終わりで分かる(言い切った文は「。」、途中で止めた発話は「、」)。続けて、言い淀み(あの・ええと)を挟んだ言い直しの発話を流し、確定版に発話に無い 1 文字の英字(「ええと」→「aと」のような断片)が残らずに届く。--engine whisper でも同じ期待で通る(同じ基準)",
+  "description": "届け方: 平叙文・質問文・途中で止めた発話の 3 本を 2 回続けて話す(engine=haas)。確定版だけが届き、発話の繋ぎ目が確定版の終わりで分かる(言い切った文は「。」、途中で止めた発話は「、」)。続けて、言い淀み(あの・ええと)を挟んだ言い直しの発話を流し、言い直した語が届く(Haas は「ええと」を「aと」と書くことがあり、日本語に付いた「aと」(「三部aと五部」)は話した英字(「変数aと」)と見分けられないので残ることがある。話した語を欠かさないのが先)。最後に、話した英字(「エックス軸とワイ軸」)が欠けずに「x」「y」のまま届く。--engine whisper でも同じ期待で通る(同じ基準)",
   "timeoutMs": 600000,
   "settings": { "engine": "haas" },
   "actions": [
@@ -30,6 +30,10 @@
     { "do": "press", "audio": "test-results/fixtures/utt-37.wav" },
     { "do": "holdUntilAudioEnd" },
     { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "test-results/fixtures/utt-38.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "release" },
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
@@ -40,9 +44,10 @@
       { "to": "textbox", "text": "明日の打ち合わせは会議室でやります。", "minSimilarity": 0.8, "endsWith": "。" },
       { "to": "textbox", "text": "この資料はいつまでに提出すればいいですか。", "minSimilarity": 0.8, "endsWith": "。" },
       { "to": "textbox", "text": "来週の打ち合わせの件なんですが、", "minSimilarity": 0.8, "endsWith": "、" },
-      { "to": "textbox", "text": "資料は、三部、五部印刷しておいてください。", "minSimilarity": 0.7, "endsWith": "。", "notContains": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"] }
+      { "to": "textbox", "text": "資料は、三部、五部印刷しておいてください。", "minSimilarity": 0.7, "endsWith": "。" },
+      { "to": "textbox", "text": "x軸とy軸の値をそれぞれ確認してください。", "minSimilarity": 0.8, "endsWith": "。", "contains": ["x", "y"] }
     ],
-    "textbox": { "text": "明日の打ち合わせは会議室でやります。この資料はいつまでに提出すればいいですか。来週の打ち合わせの件なんですが、明日の打ち合わせは会議室でやります。この資料はいつまでに提出すればいいですか。来週の打ち合わせの件なんですが、資料は、三部、五部印刷しておいてください。", "minSimilarity": 0.8 },
+    "textbox": { "text": "明日の打ち合わせは会議室でやります。この資料はいつまでに提出すればいいですか。来週の打ち合わせの件なんですが、明日の打ち合わせは会議室でやります。この資料はいつまでに提出すればいいですか。来週の打ち合わせの件なんですが、資料は、三部、五部印刷しておいてください。x軸とy軸の値をそれぞれ確認してください。", "minSimilarity": 0.8 },
     "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
     "cancellations": []
   }
