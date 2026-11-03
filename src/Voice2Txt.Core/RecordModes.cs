@@ -147,14 +147,63 @@ public interface ITalkKeyFilter
     KeyVerdict OnKey(int vk, bool down);
 }
 
+/// <summary>開始キー・終了キーで録音する判定(押さない録音の <see cref="ToggleKeyFilter"/> と、押している間だけ録音の <see cref="HoldKeyFilter"/>)。</summary>
+public interface IChordRecording
+{
+    /// <summary>開始キーで始めた録音の最中か(直前の <see cref="TalkKeySignal.TalkDown"/> が開始キーによるものか)。</summary>
+    bool ChordRecording { get; }
+
+    /// <summary>終了キー(録音中の案内に出す)。</summary>
+    KeyChord Stop { get; }
+
+    /// <summary>録音が始まらなかった(モデル準備中など)ので、次の開始キーをもう一度開始として受ける。</summary>
+    void Reset();
+}
+
+/// <summary>
+/// 押している間だけ録音(hold)のキーの判定: トークキーは <see cref="TalkKeyFilter"/> のとおり。加えて、トークキーを押していないときに開始キーの組み合わせを押すと、
+/// その発話だけ押さない録音になる(その場の押さない録音。終了キーで止めて文字起こし。録音中は他のキー・トークキーを素通しして取り消さない)。
+/// 止めた後はトークキーの押している間だけ録音に戻る。設定の切り替えも再起動も要らない。
+/// トークキーを押している間の開始キーは、他のキーと同じく発話の取り消し(トークキーの判定を優先する)。
+/// </summary>
+public sealed class HoldKeyFilter(int talkVk, KeyChord start, KeyChord stop) : ITalkKeyFilter, IChordRecording
+{
+    private readonly TalkKeyFilter _talk = new(talkVk);
+    private readonly ToggleKeyFilter _chord = new(start, stop);
+
+    public int TalkVk => talkVk;
+    public KeyChord Start => start;
+    public KeyChord Stop => stop;
+    public bool ChordRecording => _chord.Recording;
+    public void Reset() => _chord.Reset();
+
+    public KeyVerdict OnKey(int vk, bool down)
+    {
+        bool modifier = KeyChord.ModifierOf(vk) != ChordModifiers.None;
+        if (modifier) _chord.OnKey(vk, down); // 修飾キーの押下の状態だけ追う(判定は素通し)
+        if (_chord.Recording)
+        {
+            // トークキーを修飾キーとして開始キーを押した(押下中に他のキーで取り消し済み)ときの離しは、トークキーの判定の後始末だけ(素通し)
+            if (vk == talkVk && !down && _talk.Down) return _talk.OnKey(vk, down) with { Signal = TalkKeySignal.None };
+            return modifier ? KeyVerdict.Pass : _chord.OnKey(vk, down);
+        }
+        if (vk == talkVk || _talk.Talking) return _talk.OnKey(vk, down);
+        if (modifier) return _talk.OnKey(vk, down);
+        var c = _chord.OnKey(vk, down);
+        return c.Swallow || c.Signal != TalkKeySignal.None ? c : _talk.OnKey(vk, down);
+    }
+}
+
 /// <summary>
 /// 押さない録音のキーの判定: 開始キーの組み合わせで <see cref="TalkKeySignal.TalkDown"/>(録音を始める)、録音中に終了キーの組み合わせで
 /// <see cref="TalkKeySignal.TalkUp"/>(止めて文字起こし)。開始キーと終了キーが同じなら押すたびに切り替わる。
 /// 組み合わせの最後のキー(押下・リピート・離し)は操作中のアプリへ渡さない。修飾キーと他のキーはすべて素通しし、録音中に押しても録音は取り消さない
 /// (押している間だけ録音するトークキーとの違い)。修飾は過不足なく一致したときだけ(Ctrl+Alt+Shift+Space は Ctrl+Alt+Space ではない)。
 /// </summary>
-public sealed class ToggleKeyFilter(KeyChord start, KeyChord stop) : ITalkKeyFilter
+public sealed class ToggleKeyFilter(KeyChord start, KeyChord stop) : ITalkKeyFilter, IChordRecording
 {
+    bool IChordRecording.ChordRecording => _recording;
+
     private readonly HashSet<int> _mods = [];
     private int _swallowing;           // 握りつぶし中の組み合わせの最後のキー(離すまで。0 なら無し)
     private volatile bool _recording;
