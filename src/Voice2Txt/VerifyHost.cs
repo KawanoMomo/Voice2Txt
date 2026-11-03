@@ -22,6 +22,7 @@ internal sealed class VerifyHost : ApplicationContext
     private AppSettings _settings;
     private Keys _talkKey;
     private ITalkKeyFilter _keys;
+    private bool _chord; // 今の(直前の)録音が開始キーで始めたものか(録音中の案内を終了キーにする)
     private readonly VerifyTextForm _textForm; // 自分の UI スレッドで動く(オーバーレイのスクショの後ろで貼り付けを待たせない)
     private readonly nint _textHandle;
     private readonly OverlayForm _overlay;
@@ -61,7 +62,7 @@ internal sealed class VerifyHost : ApplicationContext
 
         (_textForm, _textHandle) = VerifyTextForm.StartOnOwnThread();
         _overlay = new OverlayForm(StopKeyName, () => _ptt?.InputLevel ?? 0);
-        _overlay.SetToggle(_keys is ToggleKeyFilter);
+        _overlay.SetToggle(_chord);
         _ = _overlay.Handle;
         _fg = new VirtualForeground(_textHandle);
 
@@ -86,12 +87,13 @@ internal sealed class VerifyHost : ApplicationContext
             AppLog.Write($"talkkey-invalid name={s.TalkKey} fallback={TalkKeys.Default}");
         }
         lock (_result) _result.Warnings.AddRange(warnings);
-        AppLog.Write($"record-mode {(filter is ToggleKeyFilter t ? $"toggle start={t.Start} stop={t.Stop}" : $"hold talkKey={key}")}");
+        AppLog.Write($"record-mode {TalkKeys.Describe(filter, key)}");
+        _chord = filter is ToggleKeyFilter;
         return (key, filter);
     }
 
-    /// <summary>オーバーレイの録音中の案内に出す、録音を止めるキーの名前(トークキー。押さない録音は終了キーの組み合わせ)。</summary>
-    private string StopKeyName => _keys is ToggleKeyFilter t ? t.Stop.ToString() : TalkKeys.DisplayName(_talkKey);
+    /// <summary>オーバーレイの録音中の案内に出す、録音を止めるキーの名前(トークキー。開始キーで始めた録音は終了キーの組み合わせ)。</summary>
+    private string StopKeyName => TalkKeys.StopKeyName(_keys, _talkKey, _chord);
 
     private PushToTalkController CreatePtt()
     {
@@ -114,7 +116,7 @@ internal sealed class VerifyHost : ApplicationContext
                             || Engines.IsHaas(next.Engine) != Engines.IsHaas(_settings.Engine); // エンジンが変わっても読み込み直す
         _settings = next;
         (_talkKey, _keys) = TalkKeyOf(next);
-        _overlay.Invoke(() => { _overlay.SetTalkKeyName(StopKeyName); _overlay.SetToggle(_keys is ToggleKeyFilter); });
+        _overlay.Invoke(() => { _overlay.SetTalkKeyName(StopKeyName); _overlay.SetToggle(_chord); });
         _ptt = CreatePtt();
         _ptt.InterimEnabled = Backends.InterimAllowed(_engine.Runtime, true);
         await old.DisposeAsync();
@@ -160,7 +162,7 @@ internal sealed class VerifyHost : ApplicationContext
         _lastRecorded = v.State;
         var rec = new StateRecord
         {
-            AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(StopKeyName, _keys is ToggleKeyFilter),
+            AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(StopKeyName, _chord),
             InterimChars = v.Interim?.Length ?? 0,
         };
         if (v.State != OverlayState.Hidden)
@@ -208,10 +210,17 @@ internal sealed class VerifyHost : ApplicationContext
             if (!v.Swallow) _result.PassedKeys.Add(ev);
             foreach (var vk in v.InjectDown) _result.SentKeys.Add($"{(Keys)vk} down");
         }
+        if (v.Signal == TalkKeySignal.TalkDown)
+        {
+            // 開始キーで始めた録音(押さない録音・その場の押さない録音)なら、録音中の案内を終了キーにする(常駐時と同じ)
+            _chord = TalkKeys.ChordStarted(_keys);
+            var stopName = StopKeyName; bool chord = _chord;
+            _overlay.BeginInvoke(() => { _overlay.SetTalkKeyName(stopName); _overlay.SetToggle(chord); });
+        }
         switch (v.Signal)
         {
-            case TalkKeySignal.TalkDown when _keys is ToggleKeyFilter t:
-                if (!_ptt.OnToggleStart()) t.Reset(); // 録音が始まらなければ、次の開始キーをもう一度開始として受ける(常駐時と同じ)
+            case TalkKeySignal.TalkDown when _chord && _keys is IChordRecording c:
+                if (!_ptt.OnToggleStart()) c.Reset(); // 録音が始まらなければ、次の開始キーをもう一度開始として受ける(常駐時と同じ)
                 break;
             case TalkKeySignal.TalkDown: _ptt.OnTalkKeyDown(); break;
             case TalkKeySignal.TalkUp: _ptt.OnTalkKeyUp(); break;

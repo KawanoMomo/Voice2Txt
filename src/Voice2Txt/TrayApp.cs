@@ -101,11 +101,18 @@ internal sealed class TrayApp : ApplicationContext
         new Thread(() => { foreach (var a in _keys.GetConsumingEnumerable()) { try { a(); } catch (Exception ex) { AppLog.Write("key-error " + ex.Message); } } })
         { IsBackground = true, Name = "talk-key" }.Start();
         _hook = new KeyboardHook(keys);
-        // 押さない録音で録音が始まらなければ(モデル準備中など)、次の開始キーをもう一度開始として受ける
-        _hook.TalkDown += () => _keys.Add(toggle is null ? _ptt.OnTalkKeyDown : () => { if (!_ptt.OnToggleStart()) toggle.Reset(); });
+        // 開始キーで始めた録音(押さない録音・押している間だけ録音の中のその場の押さない録音)は、録音中の案内を終了キーにする。
+        // 録音が始まらなければ(モデル準備中など)、次の開始キーをもう一度開始として受ける
+        _hook.TalkDown += () =>
+        {
+            bool chord = TalkKeys.ChordStarted(keys); // フックのスレッドで、判定の直後に読む
+            var name = TalkKeys.StopKeyName(keys, talk, chord);
+            _overlay.BeginInvoke(() => { _overlay.SetTalkKeyName(name); _overlay.SetToggle(chord); });
+            _keys.Add(chord && keys is IChordRecording c ? () => { if (!_ptt.OnToggleStart()) c.Reset(); } : _ptt.OnTalkKeyDown);
+        };
         _hook.TalkUp += () => _keys.Add(_ptt.OnTalkKeyUp);
         _hook.OtherKeyWhileTalk += () => _keys.Add(_ptt.OnOtherKeyDown);
-        AppLog.Write($"record-mode {(toggle is null ? $"hold talkKey={talk}" : $"toggle start={toggle.Start} stop={toggle.Stop}")}");
+        AppLog.Write($"record-mode {TalkKeys.Describe(keys, talk)}");
 
         if (TalkKeys.InvalidWarning(settings.TalkKey) is { } warn && toggle is null)
         {
@@ -271,18 +278,33 @@ internal static class TalkKeys
     public static string DisplayName(Keys k) => SettingsSchema.TalkKeyLabel(k.ToString());
 
     /// <summary>
-    /// 設定の録音のしかたに合うキーの判定(常駐時と検証モードで同じ): 押している間だけ録音ならトークキーの <see cref="TalkKeyFilter"/>、
-    /// 押さない録音なら開始キー・終了キーの <see cref="ToggleKeyFilter"/>。読めない値は既定に戻し、知らせる文を <paramref name="warnings"/> に返す。
+    /// 設定の録音のしかたに合うキーの判定(常駐時と検証モードで同じ): 押している間だけ録音ならトークキーの判定に、その場の押さない録音
+    /// (開始キーから終了キーまで)を足した <see cref="HoldKeyFilter"/>、押さない録音なら開始キー・終了キーの <see cref="ToggleKeyFilter"/>。
+    /// 読めない値は既定に戻し、知らせる文を <paramref name="warnings"/> に返す。
     /// </summary>
     public static ITalkKeyFilter FilterFor(AppSettings s, Keys talk, out List<string> warnings)
     {
         warnings = [];
         if (RecordModes.InvalidWarning(s.RecordMode) is { } mw) warnings.Add(mw);
-        if (!RecordModes.IsToggle(s.RecordMode)) return new TalkKeyFilter((int)talk);
         var start = KeyChord.ParseOr(s.StartKey, KeyChord.DefaultStart, "startKey", out var sw);
         var stop = KeyChord.ParseOr(s.StopKey, KeyChord.DefaultStop, "stopKey", out var tw);
         if (sw is not null) warnings.Add(sw);
         if (tw is not null) warnings.Add(tw);
-        return new ToggleKeyFilter(start, stop);
+        return RecordModes.IsToggle(s.RecordMode) ? new ToggleKeyFilter(start, stop) : new HoldKeyFilter((int)talk, start, stop);
     }
+
+    /// <summary>直前の押下(TalkDown)が開始キーによるものか(押さない録音、または押している間だけ録音の中のその場の押さない録音)。</summary>
+    public static bool ChordStarted(ITalkKeyFilter keys) => keys is IChordRecording { ChordRecording: true };
+
+    /// <summary>録音中の案内に出すキーの名前: 開始キーで始めた録音なら終了キーの組み合わせ、トークキーなら画面の名前。</summary>
+    public static string StopKeyName(ITalkKeyFilter keys, Keys talk, bool chord) =>
+        chord && keys is IChordRecording c ? c.Stop.ToString() : DisplayName(talk);
+
+    /// <summary>ログの 1 行(record-mode …)。</summary>
+    public static string Describe(ITalkKeyFilter keys, Keys talk) => keys switch
+    {
+        ToggleKeyFilter t => $"toggle start={t.Start} stop={t.Stop}",
+        HoldKeyFilter h => $"hold talkKey={talk} start={h.Start} stop={h.Stop}",
+        _ => $"hold talkKey={talk}",
+    };
 }

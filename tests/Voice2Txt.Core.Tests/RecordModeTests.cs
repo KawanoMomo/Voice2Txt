@@ -117,6 +117,104 @@ public class RecordModeTests
         Assert.Equal(TalkKeySignal.TalkDown, f.OnKey(Space, true).Signal);
     }
 
+    // ---- 押している間だけ録音の中の、その場の押さない録音(HoldKeyFilter) ----
+
+    private static HoldKeyFilter Hold() => new(RCtrl, Chord("Ctrl+Alt+Space"), Chord("Ctrl+Alt+Space"));
+
+    private static KeyVerdict Press(ITalkKeyFilter f, params int[] keys)
+    {
+        foreach (var k in keys[..^1]) f.OnKey(k, true);
+        var v = f.OnKey(keys[^1], true);
+        f.OnKey(keys[^1], false);
+        foreach (var k in keys[..^1].Reverse()) f.OnKey(k, false);
+        return v;
+    }
+
+    [Fact]
+    public void 押している間だけ録音でも_開始キーでその発話だけ押さない録音になり_終了キーの後はトークキーに戻る()
+    {
+        var f = Hold();
+        var start = Press(f, LCtrl, LAlt, Space);
+        Assert.True(start.Swallow);
+        Assert.Equal(TalkKeySignal.TalkDown, start.Signal);
+        Assert.True(f.ChordRecording);
+
+        // 録音中の他のキー・ショートカット・トークキーは素通しして取り消さない
+        foreach (var (vk, down) in new[] { (C, true), (C, false), (LCtrl, true), (S, true), (S, false), (LCtrl, false), (RCtrl, true), (RCtrl, false), (Enter, true), (Enter, false) })
+        {
+            var v = f.OnKey(vk, down);
+            Assert.False(v.Swallow, $"{vk:X2} {down}");
+            Assert.Equal(TalkKeySignal.None, v.Signal);
+        }
+
+        f.OnKey(LCtrl, true); f.OnKey(LAlt, true);
+        var stop = f.OnKey(Space, true);
+        Assert.True(stop.Swallow);
+        Assert.Equal(TalkKeySignal.TalkUp, stop.Signal);
+        Assert.True(f.OnKey(Space, false).Swallow);
+        f.OnKey(LAlt, false); f.OnKey(LCtrl, false);
+        Assert.False(f.ChordRecording);
+
+        // 戻った後はトークキーの押している間だけ録音(他のキーで取り消し)
+        Assert.Equal(TalkKeySignal.TalkDown, f.OnKey(RCtrl, true).Signal);
+        Assert.False(f.ChordRecording);
+        Assert.Equal(TalkKeySignal.TalkUp, f.OnKey(RCtrl, false).Signal);
+        Assert.Equal(TalkKeySignal.TalkDown, f.OnKey(RCtrl, true).Signal);
+        Assert.Equal(TalkKeySignal.OtherKeyWhileTalk, f.OnKey(C, true).Signal);
+    }
+
+    [Fact]
+    public void トークキーを押している間の開始キーは他のキーと同じく取り消し()
+    {
+        var f = Hold();
+        Assert.Equal(TalkKeySignal.TalkDown, f.OnKey(RCtrl, true).Signal);
+        var alt = f.OnKey(LAlt, true);
+        Assert.Equal(TalkKeySignal.OtherKeyWhileTalk, alt.Signal);
+        Assert.Equal(new[] { RCtrl, LAlt }, alt.InjectDown);
+        Assert.False(f.ChordRecording);
+    }
+
+    [Fact]
+    public void 開始キーに入らない組み合わせとふつうのキーは今までどおり素通し()
+    {
+        var f = Hold();
+        Assert.Equal(KeyVerdict.Pass, Press(f, LCtrl, LShift, Space)); // Ctrl+Shift+Space は違う
+        Assert.Equal(KeyVerdict.Pass, Press(f, Space));
+        Assert.Equal(KeyVerdict.Pass, Press(f, LCtrl, C));
+        Assert.False(f.ChordRecording);
+    }
+
+    [Fact]
+    public void その場の押さない録音が始まらなかったら次の開始キーをもう一度開始として受ける()
+    {
+        var f = Hold();
+        Assert.Equal(TalkKeySignal.TalkDown, Press(f, LCtrl, LAlt, Space).Signal);
+        f.Reset();
+        Assert.False(f.ChordRecording);
+        Assert.Equal(TalkKeySignal.TalkDown, f.OnKey(RCtrl, true).Signal); // トークキーも効く
+        f.OnKey(RCtrl, false);
+        Assert.Equal(TalkKeySignal.TalkDown, Press(f, LCtrl, LAlt, Space).Signal);
+    }
+
+    [Fact]
+    public void トークキーを修飾キーにして開始キーを押しても_離したときに録音を止めない()
+    {
+        // 右 Ctrl(トークキー)+ Alt で取り消し(修飾キーとして素通し)→ Space で開始キー → 右 Ctrl を離しても録音は続く
+        var f = Hold();
+        f.OnKey(RCtrl, true);
+        Assert.Equal(TalkKeySignal.OtherKeyWhileTalk, f.OnKey(LAlt, true).Signal);
+        Assert.Equal(TalkKeySignal.TalkDown, f.OnKey(Space, true).Signal);
+        f.OnKey(Space, false); f.OnKey(LAlt, false);
+        var up = f.OnKey(RCtrl, false);
+        Assert.Equal(TalkKeySignal.None, up.Signal);
+        Assert.False(up.Swallow);
+        Assert.True(f.ChordRecording);
+        // その後のトークキーは素通し
+        Assert.False(f.OnKey(RCtrl, true).Swallow);
+        Assert.False(f.OnKey(RCtrl, false).Swallow);
+        Assert.Equal(TalkKeySignal.TalkUp, Press(f, LCtrl, LAlt, Space).Signal);
+    }
+
     [Theory]
     [InlineData("toggle", "toggle")]
     [InlineData("押さない録音", "toggle")]
