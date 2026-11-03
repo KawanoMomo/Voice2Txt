@@ -26,9 +26,12 @@ public sealed record UtteranceReport(
 /// <param name="CloseSentence">確定版の終わりに発話の区切り(言い切れば「。」、途中で止めれば「、」。<see cref="SentenceEnd"/>)を付けてから届ける。
 /// 常駐時と検証モードは常にオン(<see cref="From"/>)。設定項目ではない(既定 false は文字列をそのまま比べる unit のため)。</param>
 /// <param name="ModelNoticeMs">モデル準備中・使えないときに押して離した後も、その知らせを出しておくミリ秒。null なら <see cref="OverlayView.ModelNoticeMs"/>(文言の長さに合わせた既定)。設定項目ではない(テストが短くするためのもの)。</param>
+/// <param name="RemoveStrayLetters">確定版と途中経過から、発話に無い 1 文字の英字(<see cref="StrayLetters"/>)を取り除く。engine=haas のときだけオン(<see cref="From"/>)。
+/// whisper は日本語の中の変数・軸の名前(「x軸」「変数x」)を小文字 1 文字で書くので、whisper では掛けない。設定項目ではない。</param>
 public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01,
     int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500, IReadOnlyList<string>? Fillers = null,
-    int InterimIntervalMs = 0, bool ReturnToTarget = false, int? ModelNoticeMs = null, bool CloseSentence = false)
+    int InterimIntervalMs = 0, bool ReturnToTarget = false, int? ModelNoticeMs = null, bool CloseSentence = false,
+    bool RemoveStrayLetters = false)
 {
     /// <summary>途中経過を作り直す間隔の既定(MOC の「約 0.7 秒ごと」)。</summary>
     public const int DefaultInterimIntervalMs = 700;
@@ -36,7 +39,8 @@ public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThre
     public static PttOptions From(AppSettings s) => new(s.MinPressSeconds, s.SilenceThreshold,
         Fillers: s.RemoveFillers ? (s.Fillers ?? []) : null,
         InterimIntervalMs: s.ShowInterim ? DefaultInterimIntervalMs : 0,
-        ReturnToTarget: Deliveries.IsReturn(s.Delivery), CloseSentence: true);
+        ReturnToTarget: Deliveries.IsReturn(s.Delivery), CloseSentence: true,
+        RemoveStrayLetters: Engines.IsHaas(s.Engine));
 }
 
 public sealed record PttDependencies(
@@ -269,8 +273,8 @@ public sealed class PushToTalkController : IAsyncDisposable
                 long tMs = _d.Clock.NowMs - t0;
                 // 言い淀みを取り除いてから届ける(設定で止められる)。言い淀みだけの発話は空になり、取り消し(無音)になる。
                 int fillers = 0;
-                // 発話に無い 1 文字の英字(Haas が言い淀み・息を「h」「a」と書いたもの)を先に除く(エンジンを問わず同じ規則)
-                text = StrayLetters.Remove(text).Text;
+                // 発話に無い 1 文字の英字(Haas が言い淀み・息を「h」「a」と書いたもの)を先に除く(engine=haas だけ。whisper の「x軸」は話した語)
+                if (_o.RemoveStrayLetters) text = StrayLetters.Remove(text).Text;
                 if (_o.Fillers is { Count: > 0 } words) (text, fillers) = Core.Fillers.Remove(text, words);
                 // 日本語の文の間に whisper が書いた空白を詰める(「…ます。 以上です。」)。英文の語の間の空白は残す
                 text = Spacing.Tidy(text);
@@ -435,7 +439,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 catch (OperationCanceledException) { return; }
                 catch (Exception) { continue; } // 途中経過は出せなくても録音と確定版には響かせない
                 // 確定版と同じく言い淀みを除いて見せる(押下中に「ええ」が見えて、届いた確定版から消えている、という食い違いを出さない)
-                text = StrayLetters.Remove(text).Text;
+                if (_o.RemoveStrayLetters) text = StrayLetters.Remove(text).Text;
                 if (_o.Fillers is { Count: > 0 } words) text = Core.Fillers.Remove(text, words).Text;
                 text = Spacing.Tidy(text);
                 lock (_gate)
