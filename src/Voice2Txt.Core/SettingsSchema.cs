@@ -50,6 +50,12 @@ public static class SettingsSchema
     [
         new("talkKey", "トークキー", "押している間だけ録音し、離すと文字起こしして貼り付けるキー。押している間に他のキーを押すと取り消しになり、そのキーとの組み合わせ(例 右Ctrl+C)として送られます。",
             SettingKind.Choice, TalkKeyChoices),
+        new("recordMode", "録音のしかた", "押している間だけ録音(既定)か、押さない録音か。押さない録音は開始キーで録音を始め、終了キーで止めて貼り付けます。録音中に他のキーやマウスを使っても録音は途切れません(トークキーは録音に使わず、ふつうのキーとして働きます)。",
+            SettingKind.Choice, RecordModes.Choices),
+        new("startKey", "開始キー", "押さない録音で、録音を始めるキーの組み合わせ。設定ファイルには Ctrl / Alt / Shift / Win と 1 つのキーを + でつないで書けます(文字・数字・Space は Ctrl か Alt と組み合わせます)。",
+            SettingKind.Choice, KeyChord.Choices),
+        new("stopKey", "終了キー", "押さない録音で、録音を止めて文字起こし・貼り付けをするキーの組み合わせ。開始キーと同じなら、押すたびに始める・止めるが切り替わります。",
+            SettingKind.Choice, KeyChord.Choices),
         new("engine", "エンジン", "文字起こしのエンジン。Whisper(既定)か、日本語専用の Haas-ja-v1.0(speech.cpp で動かす。初回に speech.cpp と重み 0.66 GB を取得)。Haas を用意できないときは Whisper に切り替えず、理由をトレイに出します(トークキーを押せばオーバーレイにも理由と直し方が出ます)。",
             SettingKind.Choice, Engines.Choices),
         new("model", "モデル", OnlyFor(Engines.Whisper, "文字起こしに使うモデル。大きいほど正確で、用意(初回のダウンロード)と処理に時間がかかります。"),
@@ -86,6 +92,9 @@ public static class SettingsSchema
     public static string Read(AppSettings s, string key) => Get(key).Key switch
     {
         "talkKey" => s.TalkKey,
+        "recordMode" => s.RecordMode,
+        "startKey" => s.StartKey,
+        "stopKey" => s.StopKey,
         "engine" => s.Engine,
         "model" => s.Model,
         "backend" => s.Backend,
@@ -119,6 +128,27 @@ public static class SettingsSchema
                 // 選択肢に無いキーでも、設定ファイルに手で書いた今の値はそのまま残せる
                 if (v.Length > 0 && string.Equals(v, s.TalkKey, StringComparison.OrdinalIgnoreCase)) return null;
                 return $"トークキー「{v}」は選べません(選べるキー: {string.Join("、", TalkKeyChoices.Select(x => x.Label))})";
+            }
+            case "recordMode":
+            {
+                if (RecordModes.Normalize(v) is { } rm && v.Length > 0) { s.RecordMode = rm; return null; }
+                if (v.Length > 0 && string.Equals(v, s.RecordMode, StringComparison.OrdinalIgnoreCase)) return null;
+                return $"録音のしかた「{v}」は選べません(選べるもの: {string.Join("、", RecordModes.Choices.Select(x => x.Label))})";
+            }
+            case "startKey":
+            case "stopKey":
+            {
+                // 選択肢の名前(「Ctrl+Alt+Space(既定)」)か、読める組み合わせ(設定ファイルの形に揃えて書く)
+                var c = Match(KeyChord.Choices, v);
+                if (c is not null || KeyChord.TryParse(v, out _))
+                {
+                    KeyChord.TryParse(c?.Value ?? v, out var chord);
+                    if (item.Key == "startKey") s.StartKey = chord.ToString(); else s.StopKey = chord.ToString();
+                    return null;
+                }
+                var now = item.Key == "startKey" ? s.StartKey : s.StopKey;
+                if (v.Length > 0 && string.Equals(v, now, StringComparison.OrdinalIgnoreCase)) return null;
+                return $"{item.Label}「{v}」は読めません(例 Ctrl+Alt+Space。文字・数字・Space は Ctrl か Alt と組み合わせます)";
             }
             case "model":
             {

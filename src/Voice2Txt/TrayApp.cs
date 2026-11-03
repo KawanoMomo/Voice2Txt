@@ -54,7 +54,11 @@ internal sealed class TrayApp : ApplicationContext
     {
         _settings = settings;
         var talk = TalkKeys.Parse(settings.TalkKey);
-        _overlay = new OverlayForm(TalkKeys.DisplayName(talk), () => _ptt?.InputLevel ?? 0);
+        // 押さない録音: 開始キーで始め、終了キーで止める(トークキーは録音に使わない)
+        var keys = TalkKeys.FilterFor(settings, talk, out var keyWarnings);
+        var toggle = keys as ToggleKeyFilter;
+        _overlay = new OverlayForm(toggle is null ? TalkKeys.DisplayName(talk) : toggle.Stop.ToString(), () => _ptt?.InputLevel ?? 0);
+        _overlay.SetToggle(toggle is not null);
         _ = _overlay.Handle; // UI スレッドで作る(クリップボードの Invoke 先)
         _tray = new NotifyIcon { Icon = TrayIcons.Busy, Visible = true, Text = AppVersion.TrayText("モデル準備中") };
         var menu = new ContextMenuStrip();
@@ -96,15 +100,22 @@ internal sealed class TrayApp : ApplicationContext
         // フックのコールバックは軽く保つ: キー操作は専用スレッドで順に処理する
         new Thread(() => { foreach (var a in _keys.GetConsumingEnumerable()) { try { a(); } catch (Exception ex) { AppLog.Write("key-error " + ex.Message); } } })
         { IsBackground = true, Name = "talk-key" }.Start();
-        _hook = new KeyboardHook((ushort)talk);
-        _hook.TalkDown += () => _keys.Add(_ptt.OnTalkKeyDown);
+        _hook = new KeyboardHook(keys);
+        // 押さない録音で録音が始まらなければ(モデル準備中など)、次の開始キーをもう一度開始として受ける
+        _hook.TalkDown += () => _keys.Add(toggle is null ? _ptt.OnTalkKeyDown : () => { if (!_ptt.OnToggleStart()) toggle.Reset(); });
         _hook.TalkUp += () => _keys.Add(_ptt.OnTalkKeyUp);
         _hook.OtherKeyWhileTalk += () => _keys.Add(_ptt.OnOtherKeyDown);
+        AppLog.Write($"record-mode {(toggle is null ? $"hold talkKey={talk}" : $"toggle start={toggle.Start} stop={toggle.Stop}")}");
 
-        if (TalkKeys.InvalidWarning(settings.TalkKey) is { } warn)
+        if (TalkKeys.InvalidWarning(settings.TalkKey) is { } warn && toggle is null)
         {
             AppLog.Write($"talkkey-invalid name={settings.TalkKey} fallback={TalkKeys.Default}");
             _tray.ShowBalloonTip(8000, "Voice2Txt", warn, ToolTipIcon.Warning);
+        }
+        if (keyWarnings.Count > 0)
+        {
+            AppLog.Write("recordmode-invalid");
+            _tray.ShowBalloonTip(8000, "Voice2Txt", string.Join(" / ", keyWarnings), ToolTipIcon.Warning);
         }
 
         _ = LoadEngineAsync();
@@ -258,4 +269,20 @@ internal static class TalkKeys
 
     /// <summary>画面に出す名前(設定画面の選択肢と同じ。<see cref="SettingsSchema.TalkKeyChoices"/>)。</summary>
     public static string DisplayName(Keys k) => SettingsSchema.TalkKeyLabel(k.ToString());
+
+    /// <summary>
+    /// 設定の録音のしかたに合うキーの判定(常駐時と検証モードで同じ): 押している間だけ録音ならトークキーの <see cref="TalkKeyFilter"/>、
+    /// 押さない録音なら開始キー・終了キーの <see cref="ToggleKeyFilter"/>。読めない値は既定に戻し、知らせる文を <paramref name="warnings"/> に返す。
+    /// </summary>
+    public static ITalkKeyFilter FilterFor(AppSettings s, Keys talk, out List<string> warnings)
+    {
+        warnings = [];
+        if (RecordModes.InvalidWarning(s.RecordMode) is { } mw) warnings.Add(mw);
+        if (!RecordModes.IsToggle(s.RecordMode)) return new TalkKeyFilter((int)talk);
+        var start = KeyChord.ParseOr(s.StartKey, KeyChord.DefaultStart, "startKey", out var sw);
+        var stop = KeyChord.ParseOr(s.StopKey, KeyChord.DefaultStop, "stopKey", out var tw);
+        if (sw is not null) warnings.Add(sw);
+        if (tw is not null) warnings.Add(tw);
+        return new ToggleKeyFilter(start, stop);
+    }
 }

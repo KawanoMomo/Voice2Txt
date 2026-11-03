@@ -18,6 +18,11 @@ internal sealed class OverlayForm : Form
     /// <summary>文言に出すトークキーの名前(検証モードの restart で設定を読み直したときに変える。UI スレッド)。</summary>
     public void SetTalkKeyName(string name) => _talkKeyName = name;
 
+    private bool _toggle;
+
+    /// <summary>押さない録音か(録音中の案内を「{終了キー} で入力」にする。<see cref="SetTalkKeyName"/> には終了キーの組み合わせを渡す。UI スレッド)。</summary>
+    public void SetToggle(bool toggle) => _toggle = toggle;
+
     private readonly System.Windows.Forms.Timer _anim = new() { Interval = 90 };
     private readonly System.Windows.Forms.Timer _hide = new();
     private OverlayView _view = OverlayView.Hidden;
@@ -134,7 +139,7 @@ internal sealed class OverlayForm : Form
 
     private void LayoutFor(OverlayView v)
     {
-        int rowW = IconW + Gap + PartsWidth(v.Parts(_talkKeyName)), tw = 0, th = 0;
+        int rowW = IconW + Gap + PartsWidth(v.Parts(_talkKeyName, _toggle)), tw = 0, th = 0;
         _interimShown = null;
         if (!string.IsNullOrEmpty(v.Interim))
         {
@@ -201,7 +206,7 @@ internal sealed class OverlayForm : Form
         }
         x += IconW + Gap;
         // 本文は MOC の並び・色: 地の文は白、補足は灰色、キー名は枠付き、処理待ちは丸いバッジ、音量バーは「録音中」の直後
-        foreach (var p in v.Parts(_talkKeyName))
+        foreach (var p in v.Parts(_talkKeyName, _toggle))
         {
             int pw = PartWidth(p);
             switch (p.Kind)
