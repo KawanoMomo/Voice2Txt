@@ -17,27 +17,27 @@ public class DecodingTests
     [Fact]
     public void 初期プロンプトは数える列の終わりの十を数字で見せる()
     {
-        // 「…ここのつ、とお。」の「とお」は「つ」が付かない短い数で、前置きが無いと「等」になる
-        Assert.EndsWith("ここのつ、10", Decoding.InitialPrompt);
+        // 「…ここのつ、とお。」の「とお」は「つ」が付かない短い数で、前置きが無いと「等」になる。数える列は句点で閉じて先頭に置く
+        Assert.StartsWith("ここのつ、10。", Decoding.InitialPrompt);
     }
 
     [Fact]
-    public void 初期プロンプトは句点で終えない()
+    public void 初期プロンプトは言い淀みで終え_句点でも数字でも終えない()
     {
-        // 句点(「。」だけでも)で終わるプロンプトは、文頭の四字熟語の切れ目を変える(「いちごいちえの」→「一期一への」)。
-        // 句点は言い淀みの列の終わりにだけ見せる
+        // 末尾は発話の最初の語の直前の文脈になる。句点(「。」だけでも)で終えると文頭の四字熟語の切れ目が変わり(「いちごいちえの」→「一期一への」)、
+        // 数字で終えると文頭の稀な語が同音の別の書き方になる(「まどりは」→「窓りは」)。言い淀みの後はどの語でも始まる
+        Assert.EndsWith("えっと", Decoding.InitialPrompt);
         Assert.False(Decoding.InitialPrompt.EndsWith('。'));
-        Assert.Contains("えっと。", Decoding.InitialPrompt);
+        Assert.False(char.IsAsciiDigit(Decoding.InitialPrompt[^1]));
     }
 
     [Fact]
-    public void 初期プロンプトの数字は末尾の10だけ()
+    public void 初期プロンプトの数字は数える列の10だけ()
     {
         // 「9つ」を数字で見せると、数え上げでない語の「いち」「ご」まで数字に寄る(「いちごいちえ」→「151へ」)。
         // 数字で見せるのは「つ」が付かない短い数(とお)だけにする
         var digits = new string(Decoding.InitialPrompt.Where(char.IsAsciiDigit).ToArray());
         Assert.Equal("10", digits);
-        Assert.EndsWith("10", Decoding.InitialPrompt);
     }
 
     [Fact]
