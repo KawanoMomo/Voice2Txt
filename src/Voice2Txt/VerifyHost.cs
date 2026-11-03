@@ -22,7 +22,8 @@ internal sealed class VerifyHost : ApplicationContext
     private AppSettings _settings;
     private Keys _talkKey;
     private TalkKeyFilter _keys;
-    private readonly VerifyTextForm _textForm;
+    private readonly VerifyTextForm _textForm; // 自分の UI スレッドで動く(オーバーレイのスクショの後ろで貼り付けを待たせない)
+    private readonly nint _textHandle;
     private readonly OverlayForm _overlay;
     private readonly VerifyRecorder _recorder = new();
     private readonly VirtualForeground _fg;
@@ -42,7 +43,8 @@ internal sealed class VerifyHost : ApplicationContext
     private string? _lastPrepMilestone;
     private string? _fetchDir; // modelPrep = download で取得したモデルを置くフォルダ(終わったら消す)
 
-    public VerifyHost(string scenarioPath, string outDir)
+    /// <param name="engine">台本の settings.engine に重ねるエンジン(--engine。同じ台本を whisper と haas で比べる)。null なら台本どおり。</param>
+    public VerifyHost(string scenarioPath, string outDir, string? engine = null)
     {
         _scenarioPath = scenarioPath;
         _sc = Scenario.Load(scenarioPath);
@@ -53,13 +55,13 @@ internal sealed class VerifyHost : ApplicationContext
         AppLog.Path = Path.Combine(_out, "verify.log");
         _result = new VerifyResult { Scenario = _sc.Name, Version = AppVersion.Tag(AppVersion.Current), TrayTooltip = AppVersion.TrayText("モデル準備中") };
         _settings = _sc.Settings ?? new AppSettings();
+        if (engine is not null) _settings.Engine = engine;
         (_talkKey, _keys) = TalkKeyOf(_settings);
 
-        _textForm = new VerifyTextForm();
-        _textForm.Show();
+        (_textForm, _textHandle) = VerifyTextForm.StartOnOwnThread();
         _overlay = new OverlayForm(TalkKeys.DisplayName(_talkKey), () => _ptt?.InputLevel ?? 0);
         _ = _overlay.Handle;
-        _fg = new VirtualForeground(_textForm.Handle);
+        _fg = new VirtualForeground(_textHandle);
 
         _paster = new TextBoxPaster(_textForm, _clip);
         _ptt = CreatePtt();
@@ -98,7 +100,8 @@ internal sealed class VerifyHost : ApplicationContext
         var old = _ptt;
         var next = AppSettings.LoadOrCreate(_settingsPath);
         bool modelChanged = !string.Equals(ModelCatalog.TryGet(next.Model, out var a) ? a.Name : next.Model,
-                                           ModelCatalog.TryGet(_settings.Model, out var b) ? b.Name : _settings.Model, StringComparison.OrdinalIgnoreCase);
+                                           ModelCatalog.TryGet(_settings.Model, out var b) ? b.Name : _settings.Model, StringComparison.OrdinalIgnoreCase)
+                            || Engines.IsHaas(next.Engine) != Engines.IsHaas(_settings.Engine); // エンジンが変わっても読み込み直す
         _settings = next;
         (_talkKey, _keys) = TalkKeyOf(next);
         _overlay.Invoke(() => _overlay.SetTalkKeyName(TalkKeys.DisplayName(_talkKey)));
@@ -202,7 +205,7 @@ internal sealed class VerifyHost : ApplicationContext
     private string ProbeForeground()
     {
         nint h = Native.GetForegroundWindow();
-        string who = h == _overlay.Handle ? "overlay" : h == _textForm.Handle ? "textbox" : "other";
+        string who = h == _overlay.Handle ? "overlay" : h == _textHandle ? "textbox" : "other";
         lock (_result)
         {
             _result.ForegroundSamples++;
@@ -242,19 +245,23 @@ internal sealed class VerifyHost : ApplicationContext
         else _result.Completed = true;
         await Task.WhenAny(_paster.DrainAsync(), Task.Delay(10_000));
         await Task.Delay(300);
+        string textbox = _textForm.Invoke(() => _textForm.Box.Text);
         _overlay.Invoke(() =>
         {
             _fgProbe.Stop();
-            _result.Textbox = _textForm.Box.Text;
+            _result.Textbox = textbox;
             _result.Clipboard = _clip.Text;
+            _result.Window = _fg.Name;
             _result.Runtime = _engine.Runtime;
             lock (_result) _result.Save(Path.Combine(_out, "result.json"));
         });
         AppLog.Write($"done completed={_result.Completed} error={_result.Error}");
         await _ptt.DisposeAsync();
+        _engine.Dispose(); // haas の worker を止める(stdin を閉じれば自分で終わる)
         if (_fetchDir is not null)
             try { Directory.Delete(_fetchDir, true); }
             catch (Exception ex) { AppLog.Write("model-prep cleanup-error " + ex.Message); }
+        _textForm.BeginInvoke(() => { _textForm.Close(); Application.ExitThread(); });
         _overlay.BeginInvoke(ExitThread);
     }
 
@@ -270,9 +277,22 @@ internal sealed class VerifyHost : ApplicationContext
                 lock (_result) _result.Warnings.Add(bw);
                 AppLog.Write($"backend-invalid value={_settings.Backend} fallback={Backends.Auto}");
             }
+            if (Engines.InvalidWarning(_settings.Engine) is { } ew)
+            {
+                lock (_result) _result.Warnings.Add(ew);
+                AppLog.Write($"engine-invalid value={_settings.Engine} fallback={Engines.Whisper}");
+            }
+            bool haas = Engines.IsHaas(_settings.Engine);
+            if (haas && HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw)
+            {
+                lock (_result) _result.Warnings.Add(kw);
+                AppLog.Write("keywords-invalid");
+            }
+            lock (_result) _result.Engine = haas ? Engines.Haas : Engines.Whisper;
             // 検証モードは CUDA の実行時ライブラリを取得しない(取得済みの runtime フォルダがあればそれを読み、無ければ次のバックエンド)。
-            // CUDA を試さない設定(vulkan / cpu)なら読みもしない(常駐時と同じ)
-            var cudaNote = Backends.NeedsCudaRuntime(_settings.Backend)
+            // CUDA を試さない設定(vulkan / cpu)と haas(speech.cpp は CUDA を使わない)なら読みもしない(常駐時と同じ)
+            var cudaNote = haas ? "speech.cpp は CUDA を使いません"
+                : Backends.NeedsCudaRuntime(_settings.Backend)
                 ? await CudaRuntimeLoader.PrepareAsync(
                     new CudaRuntimeProvisioner(CudaRuntimeCatalog.DefaultDirectory), fetch: false, ModelProgress, CancellationToken.None)
                 : "CUDA を試さない設定です";
@@ -292,21 +312,35 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 default: throw new InvalidDataException($"modelPrep を読めない: {_sc.ModelPrep}(download のみ)");
             }
-            var t = await EngineLoader.LoadAsync(_settings, dir, ModelProgress, CancellationToken.None, prov);
+            SpeechToolProvisioner? tools = _sc.SpeechTool switch
+            {
+                null => null,
+                // 取得元に届かない: PATH を見ず、空の置き場から取得を試みて失敗する(ネットに出ない)
+                "unreachable" => new SpeechToolProvisioner(Path.Combine(_out, "tools"),
+                    new HttpClient(new LocalModelSourceHandler(Path.Combine(_out, "tools", "unreachable"), 0)), () => null),
+                _ => throw new InvalidDataException($"speechTool を読めない: {_sc.SpeechTool}(unreachable のみ)"),
+            };
+            var t = await EngineLoader.LoadAsync(_settings, dir, ModelProgress, CancellationToken.None, prov, tools);
             _engine.Set(t);
             _result.ModelReadyMs = _sw.ElapsedMilliseconds;
             _result.Runtime = t.Runtime;
-            _result.Model = ModelCatalog.Get(_settings.Model).Name;
-            lock (_result) _result.TrayTooltip = AppVersion.TrayText(Backends.IdleTrayStatus(_result.Model, t.Runtime)); // 常駐時と同じ文言
+            _result.Model = Engines.ModelName(_settings);
+            lock (_result) _result.TrayTooltip = AppVersion.TrayText(Engines.IdleTrayStatus(_settings.Engine, _result.Model, t.Runtime)); // 常駐時と同じ文言
             _ptt.InterimEnabled = Backends.InterimAllowed(t.Runtime, true); // CPU では途中経過を出さない(常駐時と同じ)
             lock (_result) _result.Interim = _ptt.InterimEnabled && _settings.ShowInterim;
-            AppLog.Write($"engine-ready model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds} backend={_settings.Backend} interim={_result.Interim}");
+            AppLog.Write($"engine-ready engine={_result.Engine} model={_result.Model} runtime={t.Runtime} ms={_sw.ElapsedMilliseconds} backend={_settings.Backend} preferSpeed={_settings.PreferSpeed} interim={_result.Interim}");
             _ptt.SetModelStatus(true);
             _modelReady.TrySetResult();
         }
         catch (Exception ex)
         {
             AppLog.Write("engine-error " + ex.Message);
+            _ptt.SetModelStatus(false, Engines.FailedTrayStatus(_settings.Engine)); // 常駐時と同じ
+            lock (_result)
+            {
+                _result.EngineError = ex.Message;
+                _result.TrayTooltip = AppVersion.TrayText(Engines.FailedTrayStatus(_settings.Engine)); // 常駐時と同じ文言
+            }
             _modelReady.TrySetException(ex);
         }
     }
@@ -342,6 +376,12 @@ internal sealed class VerifyHost : ApplicationContext
                     if (w != _modelReady.Task) throw new TimeoutException("モデルの用意が終わらない");
                     await _modelReady.Task;
                     break;
+                case "waitModelFailed":
+                    // エンジンを用意できずに終わるのを待つ(取得失敗の知らせを確かめる)。用意できてしまえば台本の誤り
+                    var wf = await Task.WhenAny(_modelReady.Task, Task.Delay(a.TimeoutMs ?? 600_000));
+                    if (wf != _modelReady.Task) throw new TimeoutException("エンジンの用意が終わらない");
+                    if (_modelReady.Task.IsCompletedSuccessfully) throw new InvalidOperationException("エンジンを用意できてしまった(waitModelFailed)");
+                    break;
                 case "press":
                     _recorder.NextAudio = a.Audio is null ? [] : Audio.ReadWav16kMono(Scenario.ResolvePath(_scenarioPath, a.Audio));
                     Key(a.Key, down: true);
@@ -358,6 +398,9 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 case "focus":
                     _fg.Focus(a.Window ?? "textbox");
+                    break;
+                case "setClipboard":
+                    _clip.SetByUser(a.Value ?? "");
                     break;
                 case "lockClipboard":
                     _clip.LockFor(a.Ms ?? 0);
@@ -418,10 +461,39 @@ internal sealed class VerifyHost : ApplicationContext
     }
 }
 
-/// <summary>検証用のテキスト欄(貼り付け先ウィンドウの代わり)。</summary>
+/// <summary>
+/// 検証用のテキスト欄(貼り付け先ウィンドウの代わり)。本物の貼り付け先は別のプロセスなので、オーバーレイと同じ UI スレッドに置かず
+/// 自分の UI スレッドで動かす(オーバーレイの状態ごとのスクショが貼り付けを待たせ、離してから貼り付けまでを延ばさない)。
+/// </summary>
 internal sealed class VerifyTextForm : Form
 {
     public TextBox Box { get; } = new() { Multiline = true, Dock = DockStyle.Fill, Font = new Font("Yu Gothic UI", 11f) };
+
+    /// <summary>専用の STA スレッドでテキスト欄を作って表示し、そのスレッドでメッセージループを回す。窓のハンドルも返す(他のスレッドから Handle を読まない)。</summary>
+    public static (VerifyTextForm Form, nint Handle) StartOnOwnThread()
+    {
+        VerifyTextForm? form = null;
+        nint handle = 0;
+        Exception? error = null;
+        using var ready = new ManualResetEventSlim();
+        var t = new Thread(() =>
+        {
+            try
+            {
+                form = new VerifyTextForm();
+                form.Show();
+                handle = form.Handle;
+            }
+            catch (Exception ex) { error = ex; }
+            finally { ready.Set(); }
+            if (error is null) Application.Run();
+        }) { IsBackground = true, Name = "verify-textbox" };
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+        ready.Wait();
+        if (error is not null) throw new InvalidOperationException("検証用のテキスト欄を開けない", error);
+        return (form!, handle);
+    }
 
     public VerifyTextForm()
     {
@@ -494,8 +566,17 @@ internal sealed class VerifyRecorder : IRecorder
 internal sealed class VirtualForeground(nint textbox) : IForegroundWindow
 {
     private volatile string _current = "textbox";
+    public string Name => _current;
     public void Focus(string window) => _current = window;
     public nint Current() => _current == "textbox" ? textbox : 1;
+
+    /// <summary>届け方 return: 仮の前面を移す(検証用のテキスト欄か、それ以外 = other)。</summary>
+    public bool Activate(nint window)
+    {
+        _current = window == textbox ? "textbox" : "other";
+        AppLog.Write($"activate window={_current}");
+        return true;
+    }
 }
 
 /// <summary>検証用のクリップボード。台本の lockClipboard の間は、他アプリが開いたままのように投げる。</summary>
@@ -504,13 +585,33 @@ internal sealed class MemoryClipboard : IClipboard
     private long _lockedUntil;
     public string? Text { get; private set; }
 
+    private long _version, _setVersion = -1;
+
     public void LockFor(int ms) => Interlocked.Exchange(ref _lockedUntil, Environment.TickCount64 + ms);
+
+    /// <summary>台本の setClipboard: 利用者が自分でコピーした。</summary>
+    public void SetByUser(string text) { Text = text; Interlocked.Increment(ref _version); }
+
+    public object? Save() => new Saved(Text);
+
+    /// <summary>最後の SetText の後に利用者がコピーしていなければ、写しへ戻す。</summary>
+    public bool Restore(object saved)
+    {
+        if (saved is not Saved s || Interlocked.Read(ref _version) != Interlocked.Read(ref _setVersion)) return false;
+        Text = s.Text;
+        Interlocked.Increment(ref _version);
+        AppLog.Write($"clipboard-restored chars={s.Text?.Length ?? 0}");
+        return true;
+    }
+
+    private sealed record Saved(string? Text);
 
     public void SetText(string text)
     {
         if (Environment.TickCount64 < Interlocked.Read(ref _lockedUntil))
             throw new System.Runtime.InteropServices.ExternalException("クリップボードを開けません(検証モードの lockClipboard)");
         Text = text;
+        Interlocked.Exchange(ref _setVersion, Interlocked.Increment(ref _version));
     }
 }
 

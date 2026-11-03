@@ -357,6 +357,30 @@ public class VerificationTests
     }
 
     [Fact]
+    public void 文字起こし以外の待ちの中央値が上限を超えたら失敗にする()
+    {
+        var e = Exp();
+        e.Deliveries = null;
+        e.Textbox = null;
+        e.MaxMedianDeliverOverheadMs = 10;
+        var r = Ok();
+        // 3 本のうち 1 本だけ撮影待ちで延びても中央値は 3 ms
+        r.Deliveries =
+        [
+            new() { Seq = 1, To = "textbox", Text = "a", ReleaseToDeliverMs = 253, TranscribeMs = 250 },
+            new() { Seq = 2, To = "textbox", Text = "b", ReleaseToDeliverMs = 330, TranscribeMs = 254 },
+            new() { Seq = 3, To = "textbox", Text = "c", ReleaseToDeliverMs = 255, TranscribeMs = 252 },
+        ];
+        Assert.Empty(Evaluator.Check(e, r));
+        // 2 本が延びれば中央値が上限を超える
+        r.Deliveries[2].ReleaseToDeliverMs = 320;
+        Assert.Contains(Evaluator.Check(e, r), f => f.Contains("文字起こし以外の中央値 68 ms"));
+        // 文字起こし時間の無い届け(退避の記録など)は数えない。数えるものが無ければ見ない
+        r.Deliveries = [new() { Seq = 1, To = "clipboard", Text = "a", ReleaseToDeliverMs = 900 }];
+        Assert.Empty(Evaluator.Check(e, r));
+    }
+
+    [Fact]
     public void 期待したバックエンドで動いていなければ失敗にする()
     {
         var e = Exp();

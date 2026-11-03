@@ -21,16 +21,19 @@ public sealed record UtteranceReport(
 /// 自分の入力を処理した時で、Ctrl+V を送った時ではない)。前の Ctrl+V の後に押した発話は押下だけでこれ以上経つのがふつうで、待つのは処理待ちの発話。</param>
 /// <param name="Fillers">確定版から取り除く言い淀みの語(<see cref="Core.Fillers"/>)。null か空なら取り除かない。</param>
 /// <param name="InterimIntervalMs">押下中に途中経過を作り直す間隔(前の作り直しが終わってから次までの ms)。0 なら途中経過を出さない。</param>
+/// <param name="ReturnToTarget">届け方 return(<see cref="Deliveries"/>): 前面が変わっていても押した時点のウィンドウへ戻して貼り、
+/// <see cref="PasteSettleMs"/> 待ってからクリップボードを貼る前の中身に戻し、元の前面へ戻す。</param>
 public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01,
     int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500, IReadOnlyList<string>? Fillers = null,
-    int InterimIntervalMs = 0)
+    int InterimIntervalMs = 0, bool ReturnToTarget = false)
 {
     /// <summary>途中経過を作り直す間隔の既定(MOC の「約 0.7 秒ごと」)。</summary>
     public const int DefaultInterimIntervalMs = 700;
 
     public static PttOptions From(AppSettings s) => new(s.MinPressSeconds, s.SilenceThreshold,
         Fillers: s.RemoveFillers ? (s.Fillers ?? []) : null,
-        InterimIntervalMs: s.ShowInterim ? DefaultInterimIntervalMs : 0);
+        InterimIntervalMs: s.ShowInterim ? DefaultInterimIntervalMs : 0,
+        ReturnToTarget: Deliveries.IsReturn(s.Delivery));
 }
 
 public sealed record PttDependencies(
@@ -221,6 +224,9 @@ public sealed class PushToTalkController : IAsyncDisposable
                 }
                 // 前の発話の Ctrl+V を貼り付け先が読み終える前に上書きしない(処理待ちの発話だけがここで待つ)。
                 if (!await SettleAfterPasteAsync()) return;
+                // 届け方 return: 貼った後に戻すため、入れる前の中身を写しておく
+                object? saved = null;
+                if (_o.ReturnToTarget) try { saved = _d.Clipboard.Save(); } catch (Exception) { }
                 // 確定版をクリップボードへ(入るまで粘る)。入らなければ「Ctrl+V で貼れます」とは言わず、入力失敗を知らせる。
                 var clipError = await PutOnClipboardAsync(text);
                 if (clipError is not null)
@@ -229,10 +235,19 @@ public sealed class PushToTalkController : IAsyncDisposable
                     continue;
                 }
                 // 入った後は、貼り付け先ウィンドウが前面のときだけ Ctrl+V、違えば退避(確定版はクリップボードにある)。
+                // 届け方 return なら、違っても貼り付け先ウィンドウを前面に戻して貼る(戻せなければ退避)。
                 Outcome outcome;
+                nint back = 0;
                 try
                 {
-                    if (_d.Foreground.Current() == ctx.Target)
+                    bool here = _d.Foreground.Current() == ctx.Target;
+                    if (!here && _o.ReturnToTarget && ctx.Target != 0)
+                    {
+                        back = _d.Foreground.Current();
+                        here = _d.Foreground.Activate(ctx.Target) && _d.Foreground.Current() == ctx.Target;
+                        if (!here) back = 0;
+                    }
+                    if (here)
                     {
                         _sincePaste = System.Diagnostics.Stopwatch.StartNew();
                         _d.Paster.SendPaste(); outcome = Outcome.Pasted;
@@ -240,8 +255,10 @@ public sealed class PushToTalkController : IAsyncDisposable
                     else outcome = Outcome.Evacuated;
                 }
                 catch (Exception ex) { Finish(ctx, Outcome.Evacuated, CancelReason.Error, text, tMs, new(OverlayState.Evacuated), ex.Message, fillers, peak); continue; }
+                long deliveredAt = _d.Clock.NowMs;
+                if (outcome == Outcome.Pasted && _o.ReturnToTarget && !await ReturnAfterPasteAsync(saved, back)) return;
                 Finish(ctx, outcome, CancelReason.None, text, tMs,
-                    new(outcome == Outcome.Pasted ? OverlayState.Pasted : OverlayState.Evacuated), fillers: fillers, peak: peak);
+                    new(outcome == Outcome.Pasted ? OverlayState.Pasted : OverlayState.Evacuated), fillers: fillers, peak: peak, deliveredAt: deliveredAt);
             }
         }
         catch (OperationCanceledException) { }
@@ -255,6 +272,19 @@ public sealed class PushToTalkController : IAsyncDisposable
         if (rest <= 0) return true;
         try { await Task.Delay((int)rest, _cts.Token); return true; }
         catch (OperationCanceledException) { return false; }
+    }
+
+    /// <summary>
+    /// 届け方 return で貼った後: 貼り付け先がクリップボードを読み終えるまで(<see cref="PttOptions.PasteSettleMs"/>)待ってから、
+    /// クリップボードを貼る前の中身に戻し、貼るために前面を移したなら元の前面(<paramref name="back"/>)へ戻す。止められたら false。
+    /// </summary>
+    private async Task<bool> ReturnAfterPasteAsync(object? saved, nint back)
+    {
+        try { await Task.Delay(_o.PasteSettleMs, _cts.Token); }
+        catch (OperationCanceledException) { return false; }
+        if (saved is not null) try { _d.Clipboard.Restore(saved); } catch (Exception) { }
+        if (back != 0) try { _d.Foreground.Activate(back); } catch (Exception) { }
+        return true;
     }
 
     /// <summary>確定版をクリップボードへ入れる。入れば null、粘っても入らなければ最後の失敗の理由。</summary>
@@ -274,14 +304,15 @@ public sealed class PushToTalkController : IAsyncDisposable
         }
     }
 
-    private void Finish(Ctx ctx, Outcome o, CancelReason r, string? text, long? transcribeMs, OverlayView transient, string? error = null, int fillers = 0, double? peak = null)
+    /// <param name="deliveredAt">届けた時刻(省略時は今。届け方 return は貼った時刻で、クリップボードを戻すまでの待ちを含めない)。</param>
+    private void Finish(Ctx ctx, Outcome o, CancelReason r, string? text, long? transcribeMs, OverlayView transient, string? error = null, int fillers = 0, double? peak = null, long? deliveredAt = null)
     {
         lock (_gate)
         {
             _pending--;
             if (ctx.Seq == _interimSeq) _interim = null;
             _transient = transient;
-            long now = _d.Clock.NowMs;
+            long now = deliveredAt ?? _d.Clock.NowMs;
             Report(new(ctx.Seq, o, r, text, ctx.PressAt, ctx.StartedAt - ctx.PressAt, ctx.ReleasedAt - ctx.PressAt,
                 o is Outcome.Cancelled or Outcome.Failed ? null : now - ctx.ReleasedAt, transcribeMs, error, fillers, peak));
             Emit();

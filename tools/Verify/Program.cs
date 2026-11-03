@@ -5,11 +5,12 @@ using Voice2Txt.Core.Verification;
 
 // tools/Verify — 検証モードの台本(tests/scenarios/*.json)を順に実行し、期待と比べて passed / failed を出す。
 // 台本の音声素材(test-results/fixtures/)が足りなければ、先に tools/MakeFixtures と同じ手順で作る。
-//   dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios <file|dir>... --out <dir>
+//   dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios <file|dir>... --out <dir> [--engine whisper|haas]
+// --engine は台本の settings.engine に重ねる(同じ台本を Whisper と Haas で比べる)。
 // 終了コード: 全部 passed なら 0、1 件でも failed なら 1、使い方の誤りは 2。
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
-string? exe = null, outDir = null;
+string? exe = null, outDir = null, engine = null;
 var inputs = new List<string>();
 for (int i = 0; i < args.Length; i++)
 {
@@ -17,6 +18,7 @@ for (int i = 0; i < args.Length; i++)
     {
         case "--exe": exe = args[++i]; break;
         case "--out": outDir = args[++i]; break;
+        case "--engine": engine = args[++i]; break;
         case "--scenarios":
             while (i + 1 < args.Length && !args[i + 1].StartsWith("--")) inputs.Add(args[++i]);
             break;
@@ -56,11 +58,13 @@ foreach (var file in files)
     {
         var sc = Scenario.Load(file);
         if (sc.Expect.VersionFile is { } vf) sc.Expect.Version ??= AppVersion.Tag(File.ReadAllText(Scenario.ResolvePath(file, vf)));
-        using var p = Process.Start(new ProcessStartInfo(exe)
+        var psi = new ProcessStartInfo(exe)
         {
             ArgumentList = { "--verify", "--scenario", file, "--out", dir },
             UseShellExecute = false,
-        })!;
+        };
+        if (engine is not null) { psi.ArgumentList.Add("--engine"); psi.ArgumentList.Add(engine); }
+        using var p = Process.Start(psi)!;
         if (!p.WaitForExit(sc.TimeoutMs + 60_000))
         {
             p.Kill(entireProcessTree: true);
