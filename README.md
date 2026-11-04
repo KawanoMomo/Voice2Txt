@@ -58,7 +58,12 @@
 手 `key` は `Ctrl+V` のように `+` でつないだ組み合わせも 1 手で送る(修飾キー `Ctrl` / `Shift` / `Alt` を押したまま最後のキーを押して離す。修飾キーはトークキーでない側の左右)。検証用のテキスト欄が前面のときの `Ctrl+V` は、利用者の貼り付けとしてクリップボードの中身を欄へ入れる(退避した文を元の欄へ貼り直す手順を確かめる)。
 押さない録音(`settings.recordMode: "toggle"`)と、押している間だけ録音の中のその場の押さない録音では、`press` / `release` の `key` に開始キー・終了キーの組み合わせ(例 `Ctrl+Alt+Space`)を書くと 1 手で押して離す(`press` の `audio` はそのとき流し始める)。
 結果の `passedKeys`(素通ししたキー。`"RControlKey down"` の形)・`sentKeys`(合成して送ったキー)・`warnings`(例: talkKey を読めない)に残る。
-期待(`expect`): `deliveries`(`to`: 貼った先 `textbox` / `other`(貼った時点の仮の前面。`other` へ貼った文は検証用のテキスト欄に入らない)、退避なら `clipboard`)/ `textbox`(`text` と `minSimilarity`、`notContains`: 残っていてはならない語)/ `states` / `stateTexts`(オーバーレイの文言に含まれる文字列)/ `forbiddenStates` / `cancellations` / `passedKeys` / `sentKeys` / `warnings` / `maxReleaseToDeliverMs` / `version`(版。`versionFile: "VERSION"` ならそのファイルから作る。result.json の `version` と `trayTooltip` に出ていること)/ `screenshots` / `shots`(台本の `shot` で撮ったものを名前で引く。`state`・`minMeter` / `maxMeter`(音量バー)・`minInterimChars` / `maxInterimChars`(途中経過の文字数))/ `savedSettings`(設定画面で保存した値。例 `{"talkKey": "RMenu"}`)/ `settingsErrors`(保存できなかった理由。空配列なら失敗なし)。
+期待(`expect`): `deliveries`(`to`: 貼った先 `textbox` / `other`(貼った時点の仮の前面。`other` へ貼った文は検証用のテキスト欄に入らない)、退避なら `clipboard`)/ `textbox`(`text` と `minSimilarity`、`notContains`: 残っていてはならない語)/ `states` / `stateTexts`(オーバーレイの文言に含まれる文字列)/ `forbiddenStates` / `cancellations`(下の理由名の文字列の配列。発話の順に並べ、取り消しの無い台本は `[]`。例 `["ModelNotReady", "TooShort"]`)/ `passedKeys` / `sentKeys` / `warnings` / `maxReleaseToDeliverMs` / `version`(版。`versionFile: "VERSION"` ならそのファイルから作る。result.json の `version` と `trayTooltip` に出ていること)/ `screenshots` / `shots`(台本の `shot` で撮ったものを名前で引く。`state`・`minMeter` / `maxMeter`(音量バー)・`minInterimChars` / `maxInterimChars`(途中経過の文字数))/ `savedSettings`(設定画面で保存した値。例 `{"talkKey": "RMenu"}`)/ `settingsErrors`(保存できなかった理由。空配列なら失敗なし)。
+
+取り消しの理由名(`cancellations` に書く値。結果の `cancellations[].reason` と同じ。ログでは `reason=`): `TooShort` = 短い押下の取り消し(押す時間が短すぎる)/ `OtherKey` = トークキーと他のキーを一緒に押した取り消し /
+`Silence` = 無音の取り消し(音声が検出されない)/ `NoText` = 文字起こしの結果が空だった取り消し(言い淀みだけの発話も)/ `ModelNotReady` = モデル準備中(使えないときも)に押した押下 /
+`Error` = 録音か文字起こしに失敗した取り消し / `ClipboardBusy` = 入力失敗(取り消しではなく、確定版はできたが他のアプリがクリップボードを使い続けて届けられなかった結末。発話の順に同じ配列へ入る)。
+退避は届いた側(`deliveries` の `to: clipboard`)に入り、`cancellations` には入らない。
 
 全部の台本を回す: `dotnet run --project tools/Verify -- --exe <Voice2Txt.exe> --scenarios tests/scenarios --out <dir>`(`passed: 名前` / `failed: 名前` と理由、最後に `passed=N failed=M`、`<dir>/summary.json`)。台本の `audio` は `test-results/fixtures/` の合成音声を指し、足りなければ実行前に作る(`fixtures: N 本を作った`。日本語の音声合成の声が要る)
 
