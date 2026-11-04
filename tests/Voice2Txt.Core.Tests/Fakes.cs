@@ -118,7 +118,7 @@ internal sealed class FakeTranscriber : ITranscriber
     public Func<float[], string> Text = s => $"len{s.Length}";
     public Func<float[], Task>? Delay;
     public int Calls, InterimCalls;
-    public readonly System.Collections.Concurrent.ConcurrentQueue<int> FinalLengths = new();
+    public readonly System.Collections.Concurrent.ConcurrentQueue<int> FinalLengths = new(), InterimLengths = new();
 
     public async Task<string> TranscribeAsync(float[] samples16k, IProgress<string>? partial, CancellationToken ct)
     {
@@ -132,6 +132,7 @@ internal sealed class FakeTranscriber : ITranscriber
     {
         Interlocked.Increment(ref Calls);
         Interlocked.Increment(ref InterimCalls);
+        InterimLengths.Enqueue(samples16k.Length);
         if (Delay is not null) await Delay(samples16k);
         return Text(samples16k);
     }

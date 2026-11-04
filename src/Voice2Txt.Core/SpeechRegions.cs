@@ -59,6 +59,27 @@ public static class SpeechRegions
         Cut(samples, best, end, max, sampleRate, outp);
     }
 
+    /// <summary>
+    /// 途中経過に渡す末尾の長さの上限(秒)。オーバーレイに出すのは末尾の 3 行(約 100 字、話して 15 秒前後)だけなので、
+    /// 長く話しても途中経過の 1 回の文字起こしをこの長さまでにする(確定版は今までどおり全体)。区間の長さの上限(<see cref="MaxRegionSeconds"/>)
+    /// より長く、1 回で渡す長さ(<see cref="LongSeconds"/>)より短い。
+    /// </summary>
+    public const double InterimTailSeconds = 25;
+
+    /// <summary>
+    /// 途中経過に渡す末尾の始まり(サンプル位置)。録音が <see cref="InterimTailSeconds"/> 秒以下なら 0(全体)。
+    /// 超えれば、末尾の <see cref="InterimTailSeconds"/> 秒に入る最初の声の区間(<see cref="Find"/>)の頭から渡す(語の途中で切らない)。
+    /// その秒数に区間の頭が無ければ、ちょうどその秒数で切る。
+    /// </summary>
+    public static int InterimStart(float[] samples, double threshold, int sampleRate = Audio.SampleRate)
+    {
+        int limit = samples.Length - (int)(InterimTailSeconds * sampleRate);
+        if (limit <= 0) return 0;
+        foreach (var (start, _) in Find(samples, threshold, sampleRate))
+            if (start >= limit) return start;
+        return limit;
+    }
+
     /// <summary>区間ごとの文字列をつなぐ(日本語・中国語の側か、どちらかに空白があればそのまま。英数字どうしは空白を 1 つ挟む)。</summary>
     public static string Join(IEnumerable<string> texts)
     {
