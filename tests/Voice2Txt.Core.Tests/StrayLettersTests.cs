@@ -40,6 +40,10 @@ public class StrayLettersTests
     [InlineData("aとbを比べます")]
     [InlineData("a と b を比べます")]
     [InlineData("座標はx、y、zの順です")]
+    [InlineData("aと、bの値を足してください。")]
+    [InlineData("a と、b の値を足してください。")]
+    [InlineData("x、y、aと、bを足します")]
+    [InlineData("aと、1の値を足します")]
     [InlineData("では、x を代入します")]
     [InlineData("高さhを測ります")]
     [InlineData("明日はh会議室でやります。")]
@@ -53,6 +57,7 @@ public class StrayLettersTests
     [InlineData("x軸とy軸の値をそれぞれ確認してください", "x軸とy軸の値をそれぞれ確認してください。")]
     [InlineData("変数xに0を代入してください", "変数xに0を代入してください。")]
     [InlineData("n のデータを経平均法で分類します", "n のデータを経平均法で分類します。")]
+    [InlineData("aと、bの値を足してください。", "aと、bの値を足してください。")]
     public async Task haasの確定版でも話した小文字1文字の英字は残す(string said, string expected)
     {
         await using var r = new Rig(PttOptions.From(new AppSettings { Engine = Engines.Haas }));

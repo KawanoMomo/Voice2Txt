@@ -4,7 +4,7 @@
 - **カテゴリ**: architecture
 - **日付**: 2026-11-04(改訂 2026-11-04: エンジンを問わず掛ける決定から haas だけに掛ける決定へ。再改訂 2026-11-04: haas でも日本語に付いた英字は残す決定へ)
 - **対象プロジェクト**: Voice2Txt
-- **関連**: remove-fillers-before-delivery.md、sentence-end-mark-before-delivery.md、decoding-initial-prompt-fillers.md、BLK-human-20261103-2348-2、BLK-owner-20261104-0250-1、BLK-owner-20261104-0712-1
+- **関連**: remove-fillers-before-delivery.md、sentence-end-mark-before-delivery.md、decoding-initial-prompt-fillers.md、BLK-human-20261103-2348-2、BLK-owner-20261104-0250-1、BLK-owner-20261104-0712-1、BLK-owner-20261104-1115-1
 
 ## コンテキスト
 
@@ -29,7 +29,9 @@ engine=haas の確定版に「h」「a」のような、発話に無い 1 文字
 3 を採る(`StrayLetters.IsStray`。`PttOptions.From` が engine=haas のときだけオンにするのは変えない)。取り除くのは次の 2 つの形だけ:
 
 - 「ええと」を書いた「aと」: 「a と」(英字と「と」の間に空白)か、「aと」の前が文頭・句読点・空白・前の「aと」で、後ろが句読点・空白・文末・次の「aと」のとき。
-  「と」の後ろ(空白を飛ばす)が英字・数字(「aとb」「a と b」)なら残す
+  「と」の後ろ(空白を飛ばす)が英字・数字(「aとb」「a と b」)なら残す。「と」の後ろが句読点で、その向こう(空白を飛ばす)が英字・数字
+  (「aと、bの値」「a と、b」)も並べた名前として残す(どの語にも付いていない英字と同じ見方。Haas は「エーと、ビーの値」を「aと、bの値」と書き、
+  「ええと、Bの値」と見分けられない)。ただし前の「aと」に続く「aと」(「aとaと、 3時」)は言い淀みの繰り返しとして消す
 - どの語にも付いていない英字: 両隣(空白を飛ばす)が句読点か文頭・文末で、少なくとも片方が句読点(「h、資料は」「三部、a、五部」「送ります。a」)。
   句読点の向こうも英字・数字なら並べた名前(「x、y、z」)なので残す
 
