@@ -228,6 +228,116 @@ public class PushToTalkControllerTests
         Assert.True(v.TransientMs >= 4000);
     }
 
+    /// <summary>1 本目(1 秒)を処理中にし、2 本目を押して録音している間に窓を変えて 1 本目を退避させる。</summary>
+    private static async Task EvacuateWhileNextHeld(Rig r)
+    {
+        var first = new TaskCompletionSource();
+        r.Engine.Delay = s => s.Length == Audio.SampleRate ? first.Task : Task.CompletedTask;
+        r.Utter(1000, FakeRecorder.Tone(1.0));
+        r.Recorder.NextAudio = FakeRecorder.Tone(0.5);
+        r.Ptt.OnTalkKeyDown();                          // 2 本目を録音(貼り付け先は 100)
+        r.Fg.Window = 200;                              // 1 本目の処理中に窓を変えた
+        first.SetResult();
+        Assert.True(await Until(() => r.Reports.Count == 1));
+        Assert.Equal(Outcome.Evacuated, r.Reports[0].Outcome);
+    }
+
+    [Fact]
+    public async Task 次の発話の録音中に退避したら_録音中の行に件数が出て_済んだ後に退避を知らせる_後の貼り付けで上書きしたらWinVと言う()
+    {
+        await using var r = new Rig();
+        await EvacuateWhileNextHeld(r);
+        var held = r.Ptt.CurrentView;
+        Assert.Equal(OverlayState.Recording, held.State);   // 録音中の印と案内はそのまま
+        Assert.Contains("入力できなかった 1件", held.Text("右Ctrl"));
+        r.Fg.Window = 100;                              // 2 本目の貼り付け先へ戻って離す → 2 本目は貼られ、クリップボードを上書きする
+        r.Clock.NowMs += 600;
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.Equal([Outcome.Evacuated, Outcome.Pasted], r.Reports.Select(x => x.Outcome));
+        var v = r.Ptt.CurrentView;
+        Assert.Equal(OverlayState.Evacuated, v.State);      // 貼り付け完了より退避の知らせを出す
+        Assert.Contains("Win+V", v.Text("右Ctrl"));
+        Assert.DoesNotContain("Ctrl+V で貼れます", v.Text("右Ctrl")); // 上書きした後は Ctrl+V では出ない
+        Assert.Contains(OverlayState.Evacuated, r.States());
+        Assert.Equal(6000, v.TransientMs);
+    }
+
+    [Fact]
+    public async Task 次の発話の録音中に退避し_その後に貼ったものが無ければ_済んだ後にCtrlVで貼れますと出す()
+    {
+        await using var r = new Rig();
+        await EvacuateWhileNextHeld(r);
+        r.Ptt.OnOtherKeyDown();                         // 2 本目は取り消し(クリップボードは 1 本目のまま)
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.Equal($"len{Audio.SampleRate}", r.Clip.Text);
+        Assert.Equal(new OverlayView(OverlayState.Evacuated), r.Ptt.CurrentView);   // 1 件の退避と同じ知らせ
+        Assert.Contains("Ctrl+V で貼れます", r.Ptt.CurrentView.Text("右Ctrl"));
+    }
+
+    [Fact]
+    public async Task 退避が2件続いたら_最後の1件はCtrlV_前の分はWinVと件数つきで知らせる()
+    {
+        await using var r = new Rig();
+        await EvacuateWhileNextHeld(r);                 // 1 本目: 退避
+        r.Clock.NowMs += 600;
+        r.Ptt.OnTalkKeyUp();                            // 2 本目: 前面は 200 のまま → 退避
+        await r.Idle();
+        Assert.Equal([Outcome.Evacuated, Outcome.Evacuated], r.Reports.Select(x => x.Outcome));
+        var t = r.Ptt.CurrentView.Text("右Ctrl");
+        Assert.Equal(OverlayState.Evacuated, r.Ptt.CurrentView.State);
+        Assert.Contains("2件", t);
+        Assert.Contains("最後の 1件は Ctrl+V", t);
+        Assert.Contains("Win+V", t);
+    }
+
+    [Fact]
+    public async Task 処理待ちがある間の入力失敗も_後の発話が貼られた後に入力失敗として知らせる()
+    {
+        await using var r = new Rig(QuickRetry);
+        r.Clip.FailTimes = -1;
+        var gate = new TaskCompletionSource();
+        r.Engine.Delay = s => s.Length == Audio.SampleRate / 2 ? gate.Task : Task.CompletedTask;
+        r.Utter(1000, FakeRecorder.Tone(1.0));
+        r.Utter(600, FakeRecorder.Tone(0.5));
+        Assert.True(await Until(() => r.Reports.Count == 1));        // 1 本目は入力失敗(2 本目が処理待ち)
+        Assert.Contains("入力できなかった 1件", r.Ptt.CurrentView.Text("右Ctrl"));
+        r.Clip.FailTimes = 0;
+        gate.SetResult();
+        await r.Idle();
+        Assert.Equal([Outcome.Failed, Outcome.Pasted], r.Reports.Select(x => x.Outcome));
+        Assert.Equal(OverlayState.DeliveryFailed, r.Ptt.CurrentView.State);
+        Assert.Contains("もう一度話してください", r.Ptt.CurrentView.Text("右Ctrl"));
+    }
+
+    [Fact]
+    public async Task 届け方returnの貼り付けはクリップボードを戻すので_前に退避した確定版はCtrlVで貼れるまま()
+    {
+        await using var r = new Rig(new PttOptions(ReturnToTarget: true, PasteSettleMs: 10));
+        r.Fg.CanActivate = false;                       // 1 本目は戻せず退避
+        await EvacuateWhileNextHeld(r);
+        r.Fg.CanActivate = true;
+        r.Fg.Window = 100;
+        r.Clock.NowMs += 600;
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.Equal([Outcome.Evacuated, Outcome.Pasted], r.Reports.Select(x => x.Outcome));
+        Assert.Equal($"len{Audio.SampleRate}", r.Clip.Text);
+        Assert.Equal(new OverlayView(OverlayState.Evacuated), r.Ptt.CurrentView);
+    }
+
+    [Fact]
+    public async Task 退避が無ければ連投の後も今までどおり貼り付け完了()
+    {
+        await using var r = new Rig();
+        r.Utter(1000, FakeRecorder.Tone(1.0));
+        r.Utter(600, FakeRecorder.Tone(0.5));
+        await r.Idle();
+        Assert.Equal(new OverlayView(OverlayState.Pasted), r.Ptt.CurrentView);
+        Assert.DoesNotContain(r.Views, v => v.Carried is not null);
+    }
+
     [Fact]
     public async Task 処理中に次の発話を録音でき_録音した順に届く_後の発話が先に終わっても追い越さない()
     {

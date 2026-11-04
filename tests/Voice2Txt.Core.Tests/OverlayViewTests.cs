@@ -59,6 +59,50 @@ public class OverlayViewTests
         Assert.Equal(Squash(v.Text("右Alt")), Squash(string.Concat(v.Parts("右Alt").Select(p => p.Text))));
     }
 
+    public static TheoryData<OverlayState, int, int, bool> CarriedCases => new()
+    {
+        { OverlayState.Recording, 1, 0, true },
+        { OverlayState.ProcessingAndRecording, 2, 1, false },
+        { OverlayState.Processing, 0, 1, false },
+        { OverlayState.Preparing, 1, 0, false },
+        { OverlayState.Evacuated, 1, 0, false },
+        { OverlayState.Evacuated, 2, 0, true },
+        { OverlayState.Evacuated, 3, 0, false },
+        { OverlayState.Evacuated, 1, 2, true },
+        { OverlayState.DeliveryFailed, 0, 2, false },
+    };
+
+    [Theory]
+    [MemberData(nameof(CarriedCases))]
+    public void 持ち越した知らせがあっても_部品の文字をつなぐと本文と同じ(OverlayState s, int evac, int failed, bool onClip)
+    {
+        var v = new OverlayView(s, 1) { Carried = new(evac, failed, onClip) };
+        static string Squash(string t) => string.Concat(t.Where(c => !char.IsWhiteSpace(c)));
+        Assert.Equal(Squash(v.Text("右Alt")), Squash(string.Concat(v.Parts("右Alt").Select(p => p.Text))));
+    }
+
+    [Fact]
+    public void 録音中に持ち越した知らせがあれば_案内の後ろに注意の色で件数()
+    {
+        var v = new OverlayView(OverlayState.Recording) { Carried = new(1, 1, true) };
+        Assert.Equal("Text Meter Key Text Warn", Kinds(v));
+        Assert.Equal("! 入力できなかった 2件", v.Parts("右Ctrl")[^1].Text);
+        Assert.Equal("録音中", v.Label);   // 状態は録音中のまま
+    }
+
+    [Fact]
+    public void まとめた退避の知らせは_CtrlVとWinVを枠付きにし_上書きした後はCtrlVで貼れますと言わない()
+    {
+        var over = new OverlayView(OverlayState.Evacuated) { Carried = new(1, 0, false) };
+        Assert.Contains(over.Parts("右Ctrl"), p => p is { Kind: OverlayPartKind.Key, Text: "Win+V" });
+        Assert.DoesNotContain(over.Parts("右Ctrl"), p => p.Text == "Ctrl+V");
+        var two = new OverlayView(OverlayState.Evacuated) { Carried = new(2, 0, true) };
+        Assert.Equal(["Ctrl+V", "Win+V"], two.Parts("右Ctrl").Where(p => p.Kind == OverlayPartKind.Key).Select(p => p.Text));
+        Assert.Equal("退避", two.Label);
+        Assert.Equal("Text Key Text", Kinds(new OverlayView(OverlayState.Evacuated) { Carried = new(1, 0, true) })); // 1 件で貼れるなら MOC のまま
+        Assert.Equal(new OverlayView(OverlayState.Evacuated).Text("右Ctrl"), new OverlayView(OverlayState.Evacuated) { Carried = new(1, 0, true) }.Text("右Ctrl"));
+    }
+
     [Fact]
     public void 用意に失敗した表示は詳細をそのまま出し_状態の名前は使えない()
     {
