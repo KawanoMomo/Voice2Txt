@@ -29,10 +29,17 @@ public static class Decoding
     /// </summary>
     public static string PromptFor(IEnumerable<string>? keywords)
     {
-        var words = (keywords ?? []).Select(HaasKeywords.Normalize).OfType<string>()
-            .Select(w => w.Split('=')[0].Trim()).Where(w => w.Length > 0).Distinct().ToList();
+        var words = KeywordWords(keywords);
         return words.Count == 0 ? InitialPrompt : string.Join("、", words) + "、" + InitialPrompt;
     }
+
+    /// <summary>
+    /// whisper に渡すカスタム語彙の表記(「表記=よみ」の読みは除く。読めない語は除き、重複は 1 つに)。
+    /// 初期プロンプト(<see cref="PromptFor"/>)と復号の寄せ(<see cref="KeywordBias"/>)の両方に使う。
+    /// </summary>
+    public static IReadOnlyList<string> KeywordWords(IEnumerable<string>? keywords) =>
+        (keywords ?? []).Select(HaasKeywords.Normalize).OfType<string>()
+            .Select(w => w.Split('=')[0].Trim()).Where(w => w.Length > 0).Distinct().ToList();
 
     /// <summary>whisper のエンコーダが 1 回に読む窓(30 秒)の長さ(audio_ctx。1 秒 = 50)。</summary>
     public const int FullAudioContext = 1500;
