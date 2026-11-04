@@ -205,7 +205,7 @@ internal sealed class OverlayForm : Form
                 break;
         }
         x += IconW + Gap;
-        // 本文は MOC の並び・色: 地の文は白、補足は灰色、キー名は枠付き、処理待ちは丸いバッジ、音量バーは「録音中」の直後
+        // 本文は MOC の並び・色: 地の文は白、補足は灰色、キー名は枠付き、処理待ちは丸いバッジ、音量バーは「録音中」の直後、持ち越した知らせの件数は注意の色
         foreach (var p in v.Parts(_talkKeyName, _toggle))
         {
             int pw = PartWidth(p);
@@ -229,7 +229,8 @@ internal sealed class OverlayForm : Form
                     break;
                 default:
                     int h = TextRenderer.MeasureText(p.Text, Font, Size.Empty, Flags).Height;
-                    TextRenderer.DrawText(g, p.Text, Font, new Point(x, cy - h / 2), p.Kind == OverlayPartKind.Note ? Muted : Color.White, Flags);
+                    var color = p.Kind switch { OverlayPartKind.Note => Muted, OverlayPartKind.Warn => Warn, _ => Color.White };
+                    TextRenderer.DrawText(g, p.Text, Font, new Point(x, cy - h / 2), color, Flags);
                     break;
             }
             x += pw + Gap;

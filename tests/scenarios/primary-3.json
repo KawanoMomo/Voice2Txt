@@ -2,7 +2,7 @@
   "name": "primary-3",
   "persona": "primary",
   "step": 3,
-  "description": "モデルを変える: 設定の model を小さい側の base にする。取得元から用意(取得・ハッシュ検証)して読み込み、そのモデルで 2 本が話した順に貼られる",
+  "description": "モデルを変える: 設定の model を小さい側の base にする。取得元から用意(取得・ハッシュ検証)して読み込み、そのモデルで 2 本が話した順に貼られる。続けて連投しながら窓を切り替える(退避): 1 本目を離してすぐ別の窓へ移って 2 本目を話し、離してすぐ元の欄へ戻って 3 本目を話す。1・2 本目は次の発話の録音中に退避し、録音中の行に「! 入力できなかった n件」が出る。3 本目が貼られてクリップボードを上書きした後、退避した 2 件を「Win+V の履歴から貼れます」と知らせる(Ctrl+V で貼れるとは言わない)",
   "timeoutMs": 900000,
   "settings": { "model": "base" },
   "actions": [
@@ -16,18 +16,38 @@
     { "do": "holdUntilAudioEnd" },
     { "do": "wait", "ms": 150 },
     { "do": "release" },
+    { "do": "waitIdle", "timeoutMs": 300000 },
+    { "do": "press", "audio": "test-results/fixtures/utt-05.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "focus", "window": "other" },
+    { "do": "press", "audio": "test-results/fixtures/utt-08.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
+    { "do": "focus", "window": "textbox" },
+    { "do": "press", "audio": "test-results/fixtures/utt-09.wav" },
+    { "do": "holdUntilAudioEnd" },
+    { "do": "wait", "ms": 150 },
+    { "do": "release" },
     { "do": "waitIdle", "timeoutMs": 300000 }
   ],
   "expect": {
     "model": "base",
     "deliveries": [
       { "to": "textbox", "text": "今日の設計レビューを始めます。", "minSimilarity": 0.8 },
-      { "to": "textbox", "text": "来週のリリースに向けて、残りの課題を洗い出しましょう。", "minSimilarity": 0.8 }
+      { "to": "textbox", "text": "来週のリリースに向けて、残りの課題を洗い出しましょう。", "minSimilarity": 0.8 },
+      { "to": "clipboard", "text": "ログの出力形式を統一する必要があると考えています。", "minSimilarity": 0.7 },
+      { "to": "clipboard", "text": "明日の打ち合わせは会議室でやります。", "minSimilarity": 0.7 },
+      { "to": "textbox", "text": "新しい担当者を紹介します。", "minSimilarity": 0.7 }
     ],
     "warnings": [],
-    "forbiddenStates": ["退避", "取り消し", "取り消し(無音)"],
+    "states": ["貼り付け完了", "録音中", "退避"],
+    "stateTexts": ["入力できなかった 1件", "入力できなかった 2件", "2件 貼り付けませんでした", "Win+V の履歴から貼れます"],
+    "forbiddenStates": ["取り消し", "取り消し(無音)"],
     "cancellations": [],
     "maxReleaseToDeliverMs": 1000,
-    "screenshots": ["貼り付け完了"]
+    "screenshots": ["貼り付け完了", "退避"]
   }
 }

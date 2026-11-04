@@ -76,6 +76,9 @@ public sealed class PushToTalkController : IAsyncDisposable
     private int _interimSeq;
     private OverlayView? _transient;
     private OverlayView _last = OverlayView.Hidden;
+    // 持ち越した知らせ: 退避・入力失敗の知らせのうち、まだ出していないもの(次の発話の録音中・処理中に起きると、その間は押下中・処理中の行が出る)。
+    // 押下中でも処理待ちも無くなったら(Emit の Settle)、退避・入力失敗の知らせとしてまとめて出す
+    private CarriedNotice? _carried;
 
     public event Action<OverlayView>? OverlayChanged;
     public event Action<UtteranceReport>? Finished;
@@ -375,11 +378,41 @@ public sealed class PushToTalkController : IAsyncDisposable
             _pending--;
             if (ctx.Seq == _interimSeq) _interim = null;
             _transient = transient;
+            Carry(o);
             long now = deliveredAt ?? _d.Clock.NowMs;
             Report(new(ctx.Seq, o, r, text, ctx.PressAt, ctx.StartedAt - ctx.PressAt, ctx.ReleasedAt - ctx.PressAt,
                 o is Outcome.Cancelled or Outcome.Failed ? null : now - ctx.ReleasedAt, transcribeMs, error, fillers, peak));
             Emit();
         }
+    }
+
+    /// <summary>
+    /// 結末を持ち越した知らせに数える(ロック内)。退避・入力失敗は必ず数え、まとめて出すのは <see cref="Settle"/>。
+    /// 貼り付けはクリップボードを上書きするので、それより前に退避した確定版は Ctrl+V では出なくなる
+    /// (届け方 return は貼った後にクリップボードを貼る前の中身 = 退避した確定版に戻すので上書きにならない)。
+    /// </summary>
+    private void Carry(Outcome o)
+    {
+        var c = _carried ?? new CarriedNotice(0, 0, false);
+        _carried = o switch
+        {
+            Outcome.Evacuated => c with { Evacuated = c.Evacuated + 1, LastEvacuatedOnClipboard = true },
+            Outcome.Failed => c with { Failed = c.Failed + 1 },
+            Outcome.Pasted when _carried is not null && !_o.ReturnToTarget => c with { LastEvacuatedOnClipboard = false },
+            _ => _carried,
+        };
+    }
+
+    /// <summary>
+    /// 押下中でも処理待ちも無くなったら、持ち越した知らせを退避・入力失敗の知らせとして出す(ロック内)。直前の結末(貼り付け完了・取り消し)の
+    /// 知らせより優先する: 貼り付け完了は見落としても失うものが無いが、退避・入力失敗は利用者が拾わないと確定版が欠ける。
+    /// </summary>
+    private void Settle()
+    {
+        if (_carried is not { Count: > 0 } c || _held || _modelHeld || _pending > 0) return;
+        _carried = null;
+        var state = c.Evacuated > 0 ? OverlayState.Evacuated : OverlayState.DeliveryFailed;
+        _transient = c.IsSingle ? new OverlayView(state) : new OverlayView(state) { Carried = c };
     }
 
     private long? MicOpen() => _started ? _startedAt - _pressAt : null;
@@ -389,11 +422,13 @@ public sealed class PushToTalkController : IAsyncDisposable
     private OverlayView Compute()
     {
         if (_modelHeld) return new(OverlayState.ModelPreparing, 0, _modelDetail) { Unavailable = _modelFailed };
+        // 持ち越した知らせがあれば、押下中・処理中の行に件数を足す(録音・処理が済んだら Settle がまとめて出す)
+        var carried = _carried is { Count: > 0 } c ? c : null;
         if (_held)
-            return !_started ? new(OverlayState.Preparing, _pending)
-                : _pending > 0 ? new(OverlayState.ProcessingAndRecording, _pending, null, _interim)
-                : new(OverlayState.Recording, 0, null, _interim);
-        if (_pending > 0) return new(OverlayState.Processing, _pending, null, _interim);
+            return (!_started ? new OverlayView(OverlayState.Preparing, _pending)
+                : _pending > 0 ? new OverlayView(OverlayState.ProcessingAndRecording, _pending, null, _interim)
+                : new OverlayView(OverlayState.Recording, 0, null, _interim)) with { Carried = carried };
+        if (_pending > 0) return new OverlayView(OverlayState.Processing, _pending, null, _interim) { Carried = carried };
         if (_modelNotice) return new(OverlayState.ModelPreparing, 0, _modelDetail) { Unavailable = _modelFailed };
         return _transient ?? OverlayView.Hidden;
     }
@@ -461,6 +496,7 @@ public sealed class PushToTalkController : IAsyncDisposable
 
     private void Emit()
     {
+        Settle();
         var v = Compute();
         if (v == _last) return;
         _last = v;
