@@ -415,6 +415,7 @@ public sealed class PushToTalkController : IAsyncDisposable
 
     /// <summary>
     /// 押下中、一定間隔でそれまでの音声の写しを頭から文字起こしし直し、途中経過としてオーバーレイにだけ出す(届けない)。
+    /// 写しが <see cref="SpeechRegions.InterimTailSeconds"/> 秒を超えたら、その末尾(<see cref="SpeechRegions.InterimStart"/> から)だけを文字起こしする。
     /// 前の発話の確定版を処理している間(処理待ちがある間)は作らない: エンジンは 1 つで、確定版を待たせないため。
     /// </summary>
     private async Task InterimLoopAsync(int seq, CancellationToken ct)
@@ -432,6 +433,9 @@ public sealed class PushToTalkController : IAsyncDisposable
                 }
                 if (rec is null || Volatile.Read(ref _pending) > 0) continue;
                 var samples = rec.Snapshot();
+                // 長く話したら末尾だけを渡す(画面に出すのは末尾の 3 行だけ。1 回の重さを録音の長さに比例させない)。頭を削ったら「…」で示す
+                int from = SpeechRegions.InterimStart(samples, _o.SilenceThreshold);
+                if (from > 0) samples = samples[from..];
                 if (samples.Length < Audio.SampleRate / 2 || !Audio.HasVoice(samples, _o.SilenceThreshold)) continue;
                 samples = Audio.TrimSilence(samples, _o.SilenceThreshold);
                 string text;
@@ -442,6 +446,7 @@ public sealed class PushToTalkController : IAsyncDisposable
                 if (_o.RemoveStrayLetters) text = StrayLetters.Remove(text).Text;
                 if (_o.Fillers is { Count: > 0 } words) text = Core.Fillers.Remove(text, words).Text;
                 text = Spacing.Tidy(text);
+                if (from > 0 && text.Length > 0) text = "…" + text;
                 lock (_gate)
                 {
                     if (ct.IsCancellationRequested || !_held || _seq != seq) return;

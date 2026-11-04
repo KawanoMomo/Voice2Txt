@@ -205,6 +205,57 @@ public class InterimTests
         Assert.Equal(0, PttOptions.From(new AppSettings { ShowInterim = false }).InterimIntervalMs);
     }
 
+    /// <summary>1 秒話して 0.6 秒黙る、を seconds 秒まで繰り返した音声(長く話した押さない録音の代わり)。</summary>
+    private static float[] Talk(double seconds)
+    {
+        var res = new List<float>();
+        while (res.Count < seconds * Audio.SampleRate) { res.AddRange(FakeRecorder.Tone(1.0)); res.AddRange(FakeRecorder.Silence(0.6)); }
+        return res.Take((int)(seconds * Audio.SampleRate)).ToArray();
+    }
+
+    [Fact]
+    public async Task 長く話しても途中経過には末尾だけを渡し_確定版には全体を渡す()
+    {
+        var talk = Talk(180);
+        await using var r = new Rig(new PttOptions(InterimIntervalMs: 10));
+        r.Recorder.NextAudio = talk;
+        r.Recorder.SnapshotAudio = talk;
+        r.Engine.Text = s => s.Length == talk.Length ? "確定" : "途中";
+        r.Ptt.OnTalkKeyDown();
+        Assert.True(await Until(() => r.Ptt.CurrentView.Interim is not null, 10000));
+        // 頭を削った途中経過は「…」から始まる
+        Assert.Equal("…途中", r.Ptt.CurrentView.Interim);
+        r.Clock.NowMs += 180_000;
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.NotEmpty(r.Engine.InterimLengths);
+        Assert.All(r.Engine.InterimLengths, n => Assert.True(n <= SpeechRegions.InterimTailSeconds * Audio.SampleRate, $"途中経過に {n} サンプル"));
+        Assert.Equal(talk.Length, r.Engine.FinalLengths.Single());
+        Assert.Equal("確定", Assert.Single(r.Paster.Pasted).Text);
+    }
+
+    [Fact]
+    public void 途中経過に渡す末尾は_短い録音なら全体_長い録音なら末尾の秒数に入る最初の声の区間の頭から()
+    {
+        int rate = Audio.SampleRate, tail = (int)(SpeechRegions.InterimTailSeconds * rate);
+        Assert.Equal(0, SpeechRegions.InterimStart(Talk(20), 0.01));
+        Assert.Equal(0, SpeechRegions.InterimStart(Talk(SpeechRegions.InterimTailSeconds), 0.01));
+        foreach (var sec in new[] { 26.0, 60, 180 })
+        {
+            var a = Talk(sec);
+            int from = SpeechRegions.InterimStart(a, 0.01);
+            Assert.InRange(from, a.Length - tail, a.Length - (int)(SpeechRegions.MaxRegionSeconds * rate));
+            // 区間の頭(声の手前の余白か、区間の間)から始まり、語の途中で切らない
+            Assert.Contains(SpeechRegions.Find(a, 0.01), x => x.Start == from);
+            Assert.True(Audio.Rms(a.AsSpan(from, rate / 20)) < 0.01, $"{sec} 秒: 声の途中から始まる");
+        }
+        // 区切りが無くても末尾の秒数より長くは渡さない
+        var silent = FakeRecorder.Silence(60);
+        Assert.InRange(SpeechRegions.InterimStart(silent, 0.01), silent.Length - tail, silent.Length);
+        var tone = FakeRecorder.Tone(60);
+        Assert.InRange(SpeechRegions.InterimStart(tone, 0.01), tone.Length - tail, tone.Length);
+    }
+
     [Fact]
     public void 欄に収まらない途中経過は頭を削って末尾を残す()
     {
