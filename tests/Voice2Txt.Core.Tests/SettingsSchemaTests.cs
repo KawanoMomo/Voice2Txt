@@ -37,6 +37,27 @@ public class SettingsSchemaTests
     }
 
     [Fact]
+    public void トークキーは押している間だけ録音のときだけ_開始キーと終了キーはどちらでも効くと説明の先頭で示す()
+    {
+        Assert.StartsWith("録音のしかたが「押している間だけ録音」のときだけ使います。", SettingsSchema.Get("talkKey").Description);
+        Assert.StartsWith("どちらの録音のしかたでも効きます。", SettingsSchema.Get("startKey").Description);
+        Assert.StartsWith("どちらの録音のしかたでも効きます。", SettingsSchema.Get("stopKey").Description);
+        Assert.Contains("トークキーの録音に戻ります", SettingsSchema.Get("stopKey").Description);
+    }
+
+    [Fact]
+    public void 組み合わせの説明と読めない値の知らせはコードが受け付ける修飾と同じ()
+    {
+        // KeyChord.TryParse は文字・数字・Space を Ctrl・Alt・Win のどれかとの組み合わせで受け付ける
+        Assert.True(KeyChord.TryParse("Win+A", out _));
+        Assert.Contains("Ctrl・Alt・Win のどれか", SettingsSchema.Get("startKey").Description);
+        Assert.DoesNotContain("Ctrl か Alt", SettingsSchema.Get("startKey").Description);
+        Assert.Contains("Ctrl・Alt・Win のどれか", SettingsSchema.Apply(new AppSettings(), "startKey", "Space"));
+        KeyChord.ParseOr("Space", KeyChord.DefaultStart, "startKey", out var warn);
+        Assert.Contains("Ctrl・Alt・Win のどれか", warn);
+    }
+
+    [Fact]
     public void カスタム語彙はどちらのエンジンでも効き_読みはHaasのときだけと同じ形で示す()
     {
         var item = SettingsSchema.Get("keywords");
@@ -55,7 +76,8 @@ public class SettingsSchemaTests
             Assert.DoesNotContain("(Whisper)", i.Label);
             Assert.DoesNotContain("では使いません", i.Description);
             int at = i.Description.IndexOf("のときだけ使います", StringComparison.Ordinal);
-            Assert.True(at < 0 || i.Description.StartsWith("エンジンが "), $"{i.Key}: 説明の途中で限定を示している");
+            // 録音のしかたで効かない項目も同じ形(説明の先頭)で示す(BLK-owner-20261103-2251-1 で「録音のしかたが 」を足した)
+            Assert.True(at < 0 || i.Description.StartsWith("エンジンが ") || i.Description.StartsWith("録音のしかたが「"),$"{i.Key}: 説明の途中で限定を示している");
         }
     }
 

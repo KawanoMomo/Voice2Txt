@@ -136,7 +136,7 @@ public sealed record KeyChord(ChordModifiers Modifiers, int Vk)
         warning = null;
         if (TryParse(text, out var c)) return c;
         TryParse(fallback, out c);
-        warning = $"設定の {settingKey}「{text}」を読めないため {fallback} を使います(例 Ctrl+Alt+Space。文字・数字・Space は Ctrl か Alt と組み合わせます)";
+        warning = $"設定の {settingKey}「{text}」を読めないため {fallback} を使います(例 Ctrl+Alt+Space。{SettingsSchema.ChordRule})";
         return c;
     }
 }

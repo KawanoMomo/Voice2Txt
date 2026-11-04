@@ -46,15 +46,27 @@ public static class SettingsSchema
     public static string OnlyFor(string engine, string description) =>
         $"エンジンが {(Engines.IsHaas(engine) ? "Haas" : "Whisper")} のときだけ使います。{description}";
 
+    /// <summary>
+    /// 片方の録音のしかたでだけ効く項目の示し方(<see cref="OnlyFor"/> と同じ形): 説明の先頭に「録音のしかたが「…」のときだけ使います。」と書く。
+    /// </summary>
+    public static string OnlyForMode(string mode, string description) =>
+        $"録音のしかたが「{(RecordModes.IsToggle(mode) ? "押さない録音" : "押している間だけ録音")}」のときだけ使います。{description}";
+
+    /// <summary>どちらの録音のしかたでも効くキーの説明の先頭。</summary>
+    public const string BothModes = "どちらの録音のしかたでも効きます。";
+
+    /// <summary>開始キー・終了キーの組み合わせに使える修飾の説明(<see cref="KeyChord.TryParse"/> が受け付けるもの)。</summary>
+    public const string ChordRule = "文字・数字・Space は Ctrl・Alt・Win のどれかと組み合わせます";
+
     public static IReadOnlyList<SettingItem> Items { get; } =
     [
-        new("talkKey", "トークキー", "押している間だけ録音し、離すと文字起こしして貼り付けるキー。押している間に他のキーを押すと取り消しになり、そのキーとの組み合わせ(例 右Ctrl+C)として送られます。",
+        new("talkKey", "トークキー", OnlyForMode(RecordModes.Hold, "押している間だけ録音し、離すと文字起こしして貼り付けるキー。押している間に他のキーを押すと取り消しになり、そのキーとの組み合わせ(例 右Ctrl+C)として送られます。"),
             SettingKind.Choice, TalkKeyChoices),
         new("recordMode", "録音のしかた", "押している間だけ録音(既定)か、押さない録音か。押さない録音は開始キーで録音を始め、終了キーで止めて貼り付けます。録音中に他のキーやマウスを使っても録音は途切れません(トークキーは録音に使わず、ふつうのキーとして働きます)。押している間だけ録音のままでも、開始キーを押せばその発話だけ押さない録音になり、終了キーで止めるとトークキーの録音に戻ります(切り替えに設定・再起動は要りません)。",
             SettingKind.Choice, RecordModes.Choices),
-        new("startKey", "開始キー", "録音を始めるキーの組み合わせ(押さない録音でも、押している間だけ録音でトークキーを押していないときでも効きます)。設定ファイルには Ctrl / Alt / Shift / Win と 1 つのキーを + でつないで書けます(文字・数字・Space は Ctrl か Alt と組み合わせます)。",
+        new("startKey", "開始キー", BothModes + "録音を始めるキーの組み合わせ(押している間だけ録音では、トークキーを押していないときに押すと、その発話だけ押さない録音になります)。設定ファイルには Ctrl / Alt / Shift / Win と 1 つのキーを + でつないで書けます(" + ChordRule + ")。",
             SettingKind.Choice, KeyChord.Choices),
-        new("stopKey", "終了キー", "開始キーで始めた録音を止めて文字起こし・貼り付けをするキーの組み合わせ。開始キーと同じなら、押すたびに始める・止めるが切り替わります。",
+        new("stopKey", "終了キー", BothModes + "開始キーで始めた録音を止めて文字起こし・貼り付けをするキーの組み合わせ(押している間だけ録音では、開始キーで始めた発話を止めて、トークキーの録音に戻ります)。開始キーと同じなら、押すたびに始める・止めるが切り替わります。",
             SettingKind.Choice, KeyChord.Choices),
         new("engine", "エンジン", "文字起こしのエンジン。Whisper(既定)か、日本語専用の Haas-ja-v1.0(speech.cpp で動かす。初回に speech.cpp と重み 0.66 GB を取得)。Haas を用意できないときは Whisper に切り替えず、理由をトレイに出します(トークキーを押せばオーバーレイにも理由と直し方が出ます)。",
             SettingKind.Choice, Engines.Choices),
@@ -148,7 +160,7 @@ public static class SettingsSchema
                 }
                 var now = item.Key == "startKey" ? s.StartKey : s.StopKey;
                 if (v.Length > 0 && string.Equals(v, now, StringComparison.OrdinalIgnoreCase)) return null;
-                return $"{item.Label}「{v}」は読めません(例 Ctrl+Alt+Space。文字・数字・Space は Ctrl か Alt と組み合わせます)";
+                return $"{item.Label}「{v}」は読めません(例 Ctrl+Alt+Space。{ChordRule})";
             }
             case "model":
             {
