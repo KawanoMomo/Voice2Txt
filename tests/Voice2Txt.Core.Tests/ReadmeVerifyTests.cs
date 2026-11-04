@@ -26,6 +26,39 @@ public class ReadmeVerifyTests
         Assert.Equal(actual.Order(), listed.Order());
     }
 
+    /// <summary>README の「オーバーレイの状態表示」の表の行(状態の名前 → 本文の欄)。</summary>
+    private static Dictionary<string, string> OverlayRows()
+    {
+        var text = Readme().Replace("\r\n", "\n");
+        int at = text.IndexOf("- オーバーレイの状態表示:", StringComparison.Ordinal);
+        Assert.True(at >= 0, "README に「オーバーレイの状態表示」が無い");
+        int end = text.IndexOf("\n- ", at + 1, StringComparison.Ordinal);
+        var para = end < 0 ? text[at..] : text[at..end];
+        var rows = new Dictionary<string, string>();
+        foreach (var line in para.Split('\n'))
+        {
+            var cells = line.Trim().Split('|');
+            if (cells.Length < 6 || cells[1].Trim() is "状態" or "---") continue;
+            rows[cells[1].Trim()] = cells[3].Trim();
+        }
+        return rows;
+    }
+
+    [Fact]
+    public void オーバーレイの状態表示の表は非表示以外の全状態をOverlayViewの本文どおりに載せる()
+    {
+        var rows = OverlayRows();
+        foreach (var s in Enum.GetValues<OverlayState>().Where(s => s != OverlayState.Hidden))
+        {
+            var label = OverlayView.LabelOf(s);
+            Assert.True(rows.ContainsKey(label), $"README の状態表示の表に「{label}」が無い");
+            // 例として載せる値: トークキーは初期値の右Ctrl、処理待ちは 1 件、詳細(取り消しの理由・準備の進み具合)は無し
+            var expected = new OverlayView(s, PendingCount: s == OverlayState.ProcessingAndRecording ? 1 : 0).Text("右Ctrl");
+            Assert.Equal($"`{expected}`", rows[label]);
+        }
+        Assert.True(rows.ContainsKey(OverlayView.UnavailableLabel), "README の状態表示の表に「使えない」が無い");
+    }
+
     [Fact]
     public void 期待のcancellationsは理由名の配列と書いてある()
     {
