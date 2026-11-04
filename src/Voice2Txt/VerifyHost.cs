@@ -66,7 +66,7 @@ internal sealed class VerifyHost : ApplicationContext
         _ = _overlay.Handle;
         _fg = new VirtualForeground(_textHandle);
 
-        _paster = new TextBoxPaster(_textForm, _clip);
+        _paster = new TextBoxPaster(_textForm, _clip, _fg);
         _ptt = CreatePtt();
         _fgProbe.Tick += (_, _) => ProbeForeground();
         _fgProbe.Start();
@@ -293,7 +293,7 @@ internal sealed class VerifyHost : ApplicationContext
             else
                 _result.Deliveries.Add(new DeliveryRecord
                 {
-                    Seq = _seqBase + r.Seq, To = r.Outcome == Outcome.Pasted ? "textbox" : "clipboard", Text = r.Text ?? "",
+                    Seq = _seqBase + r.Seq, To = r.Outcome == Outcome.Pasted ? _paster.LastTarget : "clipboard", Text = r.Text ?? "",
                     MicOpenMs = r.MicOpenMs, HeldMs = r.HeldMs, ReleaseToDeliverMs = r.ReleaseToDeliverMs, TranscribeMs = r.TranscribeMs,
                     FillersRemoved = r.FillersRemoved,
                 });
@@ -700,16 +700,27 @@ internal sealed class MemoryClipboard : IClipboard
 }
 
 /// <summary>
-/// Ctrl+V の代わりに、クリップボードの中身を検証用のテキスト欄のカーソル位置へ貼る。
+/// Ctrl+V の代わりに、クリップボードの中身を検証用のテキスト欄のカーソル位置へ貼る。本物の Ctrl+V は前面のウィンドウへ届くので、
+/// 仮の前面(<see cref="VirtualForeground"/>)がテキスト欄でない(other)ときは欄に入れず、届け先を other と残す(欄・クリップボードの値は変えない)。
 /// 台本の pasteReadDelay を指定すると、本物の貼り付け先のように Ctrl+V を受けてから ms 後にクリップボードを読む(遅い貼り付け先)。
 /// </summary>
-internal sealed class TextBoxPaster(VerifyTextForm form, MemoryClipboard clip) : IPasteSender
+internal sealed class TextBoxPaster(VerifyTextForm form, MemoryClipboard clip, VirtualForeground fg) : IPasteSender
 {
     private readonly List<Task> _reads = [];
     public volatile int ReadDelayMs;
 
+    /// <summary>最後に Ctrl+V を送った先(仮の前面の名前: textbox か other)。結果の deliveries の to に書く。</summary>
+    public volatile string LastTarget = "textbox";
+
     public void SendPaste()
     {
+        var target = fg.Name;
+        LastTarget = target;
+        if (target != "textbox")
+        {
+            AppLog.Write($"paste-to window={target}"); // 本文は書かない。欄には入れない
+            return;
+        }
         int delay = ReadDelayMs;
         if (delay <= 0) { form.Invoke(() => form.Box.SelectedText = clip.Text ?? ""); return; }
         var t = Task.Run(async () =>
