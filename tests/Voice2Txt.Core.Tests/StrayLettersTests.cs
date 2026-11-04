@@ -9,6 +9,9 @@ public class StrayLettersTests
     [InlineData("資料は、あの三部a と五部印刷しておいてください", "資料は、あの三部と五部印刷しておいてください")]
     [InlineData("aと、資料は、ええと明日送ります。", "と、資料は、ええと明日送ります。")]
     [InlineData("aとaと、 3時に集合です。", "とと、 3時に集合です。")]
+    // 言い淀みの後に数を言った形(合成音声「ええと、3時に集合です。」の Haas の素の出力)。句読点の向こうが数字なら並べた名前ではない
+    [InlineData("aと、 3時に集合です。", "と、 3時に集合です。")]
+    [InlineData("aと、1の値を足します", "と、1の値を足します")]
     [InlineData("それで、aと、送ります", "それで、と、送ります")]
     [InlineData("三部、a、五部", "三部、五部")]
     [InlineData("三部、 a 、五部", "三部、五部")]
@@ -43,7 +46,7 @@ public class StrayLettersTests
     [InlineData("aと、bの値を足してください。")]
     [InlineData("a と、b の値を足してください。")]
     [InlineData("x、y、aと、bを足します")]
-    [InlineData("aと、1の値を足します")]
+    [InlineData("aと1の値を足します")]
     [InlineData("では、x を代入します")]
     [InlineData("高さhを測ります")]
     [InlineData("明日はh会議室でやります。")]
