@@ -349,7 +349,7 @@ internal sealed class VerifyHost : ApplicationContext
                 AppLog.Write($"engine-invalid value={_settings.Engine} fallback={Engines.Whisper}");
             }
             bool haas = Engines.IsHaas(_settings.Engine);
-            if (haas && HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw)
+            if (HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw) // カスタム語彙はどちらのエンジンでも使う
             {
                 lock (_result) _result.Warnings.Add(kw);
                 AppLog.Write("keywords-invalid");

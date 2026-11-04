@@ -76,7 +76,7 @@ public static class SettingsSchema
             SettingKind.Toggle),
         new("fillers", "取り除く言い淀み", "取り除く語を読点(、)か空白で区切って並べます。2 文字の語は前後が句読点・文頭・文末のときだけ取り除きます(「あの人」は残ります)。文頭の「ああ、」は感嘆として残ります。",
             SettingKind.Words),
-        new("keywords", "カスタム語彙", OnlyFor(Engines.Haas, "固有名詞などを、書いてほしい表記で読点(、)か改行で区切って並べます。読みを添えるときは「表記=よみ,よみ」(例 Haas=ハース)。その語が話されたときにこの表記で書かれやすくなります。"),
+        new("keywords", "カスタム語彙", "固有名詞や、同音の別の表記で書かれてしまう語を、書いてほしい表記で読点(、)か改行で区切って並べます。その語が話されたときにこの表記で書かれやすくなります(どちらのエンジンでも効きます)。読みを添えるときは「表記=よみ,よみ」(例 Haas=ハース)。読みが効くのはエンジンが Haas のときで、Whisper は表記だけを使います。",
             SettingKind.Words),
         new("fetchCudaRuntime", "CUDA を取得する", OnlyFor(Engines.Whisper, "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら Vulkan か CPU で動きます。"),
             SettingKind.Toggle),

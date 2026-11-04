@@ -29,12 +29,21 @@ public class SettingsSchemaTests
     [InlineData("model", "モデル", "Whisper")]
     [InlineData("preferSpeed", "速さを優先する", "Whisper")]
     [InlineData("fetchCudaRuntime", "CUDA を取得する", "Whisper")]
-    [InlineData("keywords", "カスタム語彙", "Haas")]
     public void 片方のエンジンでだけ効く項目は名前に括弧を付けず_説明の先頭で同じ形に示す(string key, string label, string engine)
     {
         var item = SettingsSchema.Get(key);
         Assert.Equal(label, item.Label);
         Assert.StartsWith($"エンジンが {engine} のときだけ使います。", item.Description);
+    }
+
+    [Fact]
+    public void カスタム語彙はどちらのエンジンでも効き_読みはHaasのときだけと同じ形で示す()
+    {
+        var item = SettingsSchema.Get("keywords");
+        Assert.Equal("カスタム語彙", item.Label);
+        Assert.DoesNotContain("エンジンが Haas のときだけ使います。固有", item.Description);
+        Assert.Contains("どちらのエンジンでも効きます", item.Description);
+        Assert.Contains("読みが効くのはエンジンが Haas のときで、Whisper は表記だけを使います", item.Description);
     }
 
     [Fact]
