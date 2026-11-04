@@ -4,20 +4,20 @@ using Voice2Txt.Core;
 namespace Voice2Txt;
 
 /// <summary>
-/// トークキーの低レベルフック。判定は <see cref="TalkKeyFilter"/>(検証モードと共有)に委ね、ここは結果を Windows に返すだけ。
+/// トークキーの低レベルフック。判定は <see cref="TalkKeyFilter"/>(押さない録音は <see cref="ToggleKeyFilter"/>。検証モードと共有)に委ね、ここは結果を Windows に返すだけ。
 /// フック内では重い処理をしない(呼び出し先はキューに積むだけ)。
 /// </summary>
 internal sealed class KeyboardHook : IDisposable
 {
-    private readonly TalkKeyFilter _filter;
+    private readonly ITalkKeyFilter _filter;
     private readonly Native.LowLevelKeyboardProc _proc; // GC されないよう保持
     private nint _hook;
 
     public event Action? TalkDown, TalkUp, OtherKeyWhileTalk;
 
-    public KeyboardHook(ushort talkVk)
+    public KeyboardHook(ITalkKeyFilter filter)
     {
-        _filter = new TalkKeyFilter(talkVk);
+        _filter = filter;
         _proc = Callback;
         using var p = Process.GetCurrentProcess();
         _hook = Native.SetWindowsHookEx(Native.WH_KEYBOARD_LL, _proc, Native.GetModuleHandle(p.MainModule?.ModuleName), 0);

@@ -23,9 +23,15 @@ public sealed record UtteranceReport(
 /// <param name="InterimIntervalMs">押下中に途中経過を作り直す間隔(前の作り直しが終わってから次までの ms)。0 なら途中経過を出さない。</param>
 /// <param name="ReturnToTarget">届け方 return(<see cref="Deliveries"/>): 前面が変わっていても押した時点のウィンドウへ戻して貼り、
 /// <see cref="PasteSettleMs"/> 待ってからクリップボードを貼る前の中身に戻し、元の前面へ戻す。</param>
+/// <param name="CloseSentence">確定版の終わりに発話の区切り(言い切れば「。」、途中で止めれば「、」。<see cref="SentenceEnd"/>)を付けてから届ける。
+/// 常駐時と検証モードは常にオン(<see cref="From"/>)。設定項目ではない(既定 false は文字列をそのまま比べる unit のため)。</param>
+/// <param name="ModelNoticeMs">モデル準備中・使えないときに押して離した後も、その知らせを出しておくミリ秒。null なら <see cref="OverlayView.ModelNoticeMs"/>(文言の長さに合わせた既定)。設定項目ではない(テストが短くするためのもの)。</param>
+/// <param name="RemoveStrayLetters">確定版と途中経過から、発話に無い 1 文字の英字(<see cref="StrayLetters"/>)を取り除く。engine=haas のときだけオン(<see cref="From"/>)。
+/// whisper は日本語の中の変数・軸の名前(「x軸」「変数x」)を小文字 1 文字で書くので、whisper では掛けない。設定項目ではない。</param>
 public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThreshold = 0.01,
     int ClipboardRetryMs = 3000, int ClipboardRetryIntervalMs = 50, int PasteSettleMs = 500, IReadOnlyList<string>? Fillers = null,
-    int InterimIntervalMs = 0, bool ReturnToTarget = false)
+    int InterimIntervalMs = 0, bool ReturnToTarget = false, int? ModelNoticeMs = null, bool CloseSentence = false,
+    bool RemoveStrayLetters = false)
 {
     /// <summary>途中経過を作り直す間隔の既定(MOC の「約 0.7 秒ごと」)。</summary>
     public const int DefaultInterimIntervalMs = 700;
@@ -33,7 +39,8 @@ public sealed record PttOptions(double MinPressSeconds = 0.3, double SilenceThre
     public static PttOptions From(AppSettings s) => new(s.MinPressSeconds, s.SilenceThreshold,
         Fillers: s.RemoveFillers ? (s.Fillers ?? []) : null,
         InterimIntervalMs: s.ShowInterim ? DefaultInterimIntervalMs : 0,
-        ReturnToTarget: Deliveries.IsReturn(s.Delivery));
+        ReturnToTarget: Deliveries.IsReturn(s.Delivery), CloseSentence: true,
+        RemoveStrayLetters: Engines.IsHaas(s.Engine));
 }
 
 public sealed record PttDependencies(
@@ -56,7 +63,9 @@ public sealed class PushToTalkController : IAsyncDisposable
     private readonly Task _worker;
     private System.Diagnostics.Stopwatch? _sincePaste;   // 最後に Ctrl+V を送ってから(worker だけが触る)
 
-    private bool _held, _started, _modelHeld, _modelReady;
+    private bool _held, _started, _modelHeld, _modelReady, _modelFailed;
+    private bool _modelNotice;      // モデル準備中・使えないときに押して離した後も、その知らせを出しておく間
+    private int _modelNoticeToken;  // 知らせを消す時計の世代(押し直す・用意ができたら古い時計は何もしない)
     private string? _modelDetail;
     private int _seq, _pending;
     private long _pressAt, _startedAt;
@@ -93,7 +102,21 @@ public sealed class PushToTalkController : IAsyncDisposable
     /// <summary>モデルの準備状況。準備中にトークキーが押されたら「モデル準備中」を出し、録音しない。</summary>
     public void SetModelStatus(bool ready, string? detail = null)
     {
-        lock (_gate) { _modelReady = ready; _modelDetail = detail; Emit(); }
+        lock (_gate)
+        {
+            _modelReady = ready; _modelFailed = false; _modelDetail = detail;
+            if (ready) _modelNotice = false; // 使えるようになった: 「完了まで使えません」を残さない
+            Emit();
+        }
+    }
+
+    /// <summary>
+    /// モデル(エンジン)の用意に失敗して終わった。以後に押されたら、待たせる「モデル準備中」の文言ではなく
+    /// <paramref name="message"/>(使えないことと直し方)を出し、録音しない。
+    /// </summary>
+    public void SetModelFailed(string message)
+    {
+        lock (_gate) { _modelReady = false; _modelFailed = true; _modelDetail = message; Emit(); }
     }
 
     private volatile bool _interimEnabled = true;
@@ -110,6 +133,7 @@ public sealed class PushToTalkController : IAsyncDisposable
         {
             if (_held || _modelHeld) return; // キーリピート
             _transient = null;
+            _modelNotice = false;
             if (!_modelReady) { _modelHeld = true; Emit(); return; }
             _held = true; _started = false;
             int seq = ++_seq;
@@ -126,6 +150,21 @@ public sealed class PushToTalkController : IAsyncDisposable
                     StartInterim(seq);
                 }
             });
+        }
+    }
+
+    /// <summary>
+    /// 押さない録音の開始キー: 押下と同じく録音を始める。モデル準備中・使えないなら録音せず、離したときと同じく知らせをしばらく出して消し、false を返す
+    /// (呼び出し側は次の開始キーをもう一度開始として受ける。終了キーを押すまで知らせを出し続けない)。
+    /// </summary>
+    public bool OnToggleStart()
+    {
+        lock (_gate)
+        {
+            OnTalkKeyDown();
+            if (!_modelHeld) return true;
+            OnTalkKeyUp();
+            return false;
         }
     }
 
@@ -151,8 +190,13 @@ public sealed class PushToTalkController : IAsyncDisposable
             if (_modelHeld)
             {
                 _modelHeld = false;
+                // 知らせ(進み具合・使えない理由と直し方)は離した後もしばらく出しておき、時間で消す(取り消しの知らせと同じく、短く押しても読める)
+                _modelNotice = true;
+                int token = ++_modelNoticeToken;
+                int ms = _o.ModelNoticeMs ?? OverlayView.ModelNoticeMs(_modelFailed);
                 Report(new(0, Outcome.Cancelled, CancelReason.ModelNotReady, null, _d.Clock.NowMs, null, 0, null, null));
                 Emit();
+                _ = EndModelNoticeAsync(token, ms);
                 return;
             }
             if (!_held) return;
@@ -173,6 +217,19 @@ public sealed class PushToTalkController : IAsyncDisposable
             }
             _pending++;
             _queue.Writer.TryWrite((ctx, rec.StopAsync()));
+            Emit();
+        }
+    }
+
+    /// <summary>離した後に残したモデル準備中・使えないの知らせを、<paramref name="ms"/> 後に消す(その間に押し直されたり用意ができたりしていれば何もしない)。</summary>
+    private async Task EndModelNoticeAsync(int token, int ms)
+    {
+        try { await Task.Delay(ms, _cts.Token); }
+        catch (OperationCanceledException) { return; }
+        lock (_gate)
+        {
+            if (token != _modelNoticeToken || !_modelNotice) return;
+            _modelNotice = false;
             Emit();
         }
     }
@@ -216,7 +273,13 @@ public sealed class PushToTalkController : IAsyncDisposable
                 long tMs = _d.Clock.NowMs - t0;
                 // 言い淀みを取り除いてから届ける(設定で止められる)。言い淀みだけの発話は空になり、取り消し(無音)になる。
                 int fillers = 0;
+                // 発話に無い 1 文字の英字(Haas が言い淀み・息を「h」「a」と書いたもの)を先に除く(engine=haas だけ。whisper の「x軸」は話した語)
+                if (_o.RemoveStrayLetters) text = StrayLetters.Remove(text).Text;
                 if (_o.Fillers is { Count: > 0 } words) (text, fillers) = Core.Fillers.Remove(text, words);
+                // 日本語の文の間に whisper が書いた空白を詰める(「…ます。 以上です。」)。英文の語の間の空白は残す
+                text = Spacing.Tidy(text);
+                // 発話の終わりに区切りを付ける(Haas は終わりの句点を書かない。whisper と同じ付き方に揃える)
+                if (_o.CloseSentence) text = SentenceEnd.Close(text);
                 if (text.Length == 0)
                 {
                     Finish(ctx, Outcome.Cancelled, CancelReason.NoText, null, tMs, new(OverlayState.CancelledSilence), fillers: fillers, peak: peak);
@@ -325,12 +388,13 @@ public sealed class PushToTalkController : IAsyncDisposable
 
     private OverlayView Compute()
     {
-        if (_modelHeld) return new(OverlayState.ModelPreparing, 0, _modelDetail);
+        if (_modelHeld) return new(OverlayState.ModelPreparing, 0, _modelDetail) { Unavailable = _modelFailed };
         if (_held)
             return !_started ? new(OverlayState.Preparing, _pending)
                 : _pending > 0 ? new(OverlayState.ProcessingAndRecording, _pending, null, _interim)
                 : new(OverlayState.Recording, 0, null, _interim);
         if (_pending > 0) return new(OverlayState.Processing, _pending, null, _interim);
+        if (_modelNotice) return new(OverlayState.ModelPreparing, 0, _modelDetail) { Unavailable = _modelFailed };
         return _transient ?? OverlayView.Hidden;
     }
 
@@ -375,7 +439,9 @@ public sealed class PushToTalkController : IAsyncDisposable
                 catch (OperationCanceledException) { return; }
                 catch (Exception) { continue; } // 途中経過は出せなくても録音と確定版には響かせない
                 // 確定版と同じく言い淀みを除いて見せる(押下中に「ええ」が見えて、届いた確定版から消えている、という食い違いを出さない)
+                if (_o.RemoveStrayLetters) text = StrayLetters.Remove(text).Text;
                 if (_o.Fillers is { Count: > 0 } words) text = Core.Fillers.Remove(text, words).Text;
+                text = Spacing.Tidy(text);
                 lock (_gate)
                 {
                     if (ct.IsCancellationRequested || !_held || _seq != seq) return;

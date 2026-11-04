@@ -40,17 +40,29 @@ public static class SettingsSchema
         ModelCatalog.Entries.Select(e => new SettingChoice(e.Name,
             $"{e.Name}({Size(e.Size)}{(e.Name == ModelCatalog.DefaultName ? "、既定" : "")})")).ToList();
 
+    /// <summary>
+    /// 片方のエンジンでだけ効く項目の示し方(1 つに揃える): 名前は用語のまま括弧を付けず、説明の先頭に「エンジンが … のときだけ使います。」と書く。
+    /// </summary>
+    public static string OnlyFor(string engine, string description) =>
+        $"エンジンが {(Engines.IsHaas(engine) ? "Haas" : "Whisper")} のときだけ使います。{description}";
+
     public static IReadOnlyList<SettingItem> Items { get; } =
     [
         new("talkKey", "トークキー", "押している間だけ録音し、離すと文字起こしして貼り付けるキー。押している間に他のキーを押すと取り消しになり、そのキーとの組み合わせ(例 右Ctrl+C)として送られます。",
             SettingKind.Choice, TalkKeyChoices),
-        new("engine", "エンジン", "文字起こしのエンジン。Whisper(既定)か、日本語専用の Haas-ja-v1.0(speech.cpp で動かす。初回に speech.cpp と重み 0.66 GB を取得)。Haas を用意できないときは Whisper に切り替えず、理由をトレイに出します。",
+        new("recordMode", "録音のしかた", "押している間だけ録音(既定)か、押さない録音か。押さない録音は開始キーで録音を始め、終了キーで止めて貼り付けます。録音中に他のキーやマウスを使っても録音は途切れません(トークキーは録音に使わず、ふつうのキーとして働きます)。押している間だけ録音のままでも、開始キーを押せばその発話だけ押さない録音になり、終了キーで止めるとトークキーの録音に戻ります(切り替えに設定・再起動は要りません)。",
+            SettingKind.Choice, RecordModes.Choices),
+        new("startKey", "開始キー", "録音を始めるキーの組み合わせ(押さない録音でも、押している間だけ録音でトークキーを押していないときでも効きます)。設定ファイルには Ctrl / Alt / Shift / Win と 1 つのキーを + でつないで書けます(文字・数字・Space は Ctrl か Alt と組み合わせます)。",
+            SettingKind.Choice, KeyChord.Choices),
+        new("stopKey", "終了キー", "開始キーで始めた録音を止めて文字起こし・貼り付けをするキーの組み合わせ。開始キーと同じなら、押すたびに始める・止めるが切り替わります。",
+            SettingKind.Choice, KeyChord.Choices),
+        new("engine", "エンジン", "文字起こしのエンジン。Whisper(既定)か、日本語専用の Haas-ja-v1.0(speech.cpp で動かす。初回に speech.cpp と重み 0.66 GB を取得)。Haas を用意できないときは Whisper に切り替えず、理由をトレイに出します(トークキーを押せばオーバーレイにも理由と直し方が出ます)。",
             SettingKind.Choice, Engines.Choices),
-        new("model", "モデル", "文字起こしに使う Whisper のモデル。大きいほど正確で、用意(初回のダウンロード)と処理に時間がかかります。",
+        new("model", "モデル", OnlyFor(Engines.Whisper, "文字起こしに使うモデル。大きいほど正確で、用意(初回のダウンロード)と処理に時間がかかります。"),
             SettingKind.Choice, ModelChoices),
         new("backend", "バックエンド", "文字起こしに使う GPU / CPU。自動は CUDA(NVIDIA)→ Vulkan(GPU 全般)→ CPU の順に使えるものを選びます。選んだものを使えなければ CPU で動きます(CPU では途中経過を出しません)。",
             SettingKind.Choice, Backends.Choices),
-        new("preferSpeed", "速さを優先する", "Whisper が 1 回に読む音声の窓(30 秒)を発話の長さに縮めて文字起こしします。CPU や弱い GPU で、離してから届くまでが大きく縮みます。誤りが少し増えることがあります(既定はオフ。Haas では使いません)。",
+        new("preferSpeed", "速さを優先する", OnlyFor(Engines.Whisper, "Whisper が 1 回に読む音声の窓(30 秒)を発話の長さに縮めて文字起こしします。CPU や弱い GPU で、離してから届くまでが大きく縮みます。誤りが少し増えることがあります(既定はオフ)。"),
             SettingKind.Toggle),
         new("delivery", "届け方", "離した時に前面のウィンドウが押した時と違うとき。既定は貼らずにクリップボードへ退避します(元の欄で Ctrl+V)。「押した時のウィンドウへ戻して貼る」は、押した時のウィンドウを一瞬前面に戻して貼り、元のウィンドウへ戻します。貼った後はクリップボードを貼る前の中身に戻します。",
             SettingKind.Choice, Deliveries.Choices),
@@ -62,11 +74,11 @@ public static class SettingsSchema
             SettingKind.Toggle),
         new("removeFillers", "言い淀みを取り除く", "確定版から「ええ」「あの」「えっと」などの言い淀みを取り除いてから貼り付けます。",
             SettingKind.Toggle),
-        new("fillers", "取り除く言い淀み", "取り除く語を読点(、)か空白で区切って並べます。2 文字の語は前後が句読点・文頭・文末のときだけ取り除きます(「あの人」は残ります)。",
+        new("fillers", "取り除く言い淀み", "取り除く語を読点(、)か空白で区切って並べます。2 文字の語は前後が句読点・文頭・文末のときだけ取り除きます(「あの人」は残ります)。文頭の「ああ、」は感嘆として残ります。",
             SettingKind.Words),
-        new("keywords", "カスタム語彙(Haas)", "エンジンが Haas のときだけ使います。固有名詞などを、書いてほしい表記で読点(、)か改行で区切って並べます。読みを添えるときは「表記=よみ,よみ」(例 Haas=ハース)。その語が話されたときにこの表記で書かれやすくなります。",
+        new("keywords", "カスタム語彙", "固有名詞や、同音の別の表記で書かれてしまう語を、書いてほしい表記で読点(、)か改行で区切って並べます。その語が話されたときにこの表記で書かれやすくなります(どちらのエンジンでも効きます)。読みを添えるときは「表記=よみ,よみ」(例 Haas=ハース)。読みが効くのはエンジンが Haas のときで、Whisper は表記だけを使います。",
             SettingKind.Words),
-        new("fetchCudaRuntime", "CUDA を取得する", "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら Vulkan か CPU で動きます。",
+        new("fetchCudaRuntime", "CUDA を取得する", OnlyFor(Engines.Whisper, "NVIDIA の GPU で速く動かすための実行時ライブラリ(cudart / cuBLAS)が無ければ、初回に NVIDIA の公式配布元から取得します。オフなら Vulkan か CPU で動きます。"),
             SettingKind.Toggle),
         new("autoStart", "ログオン時に起動する", "サインインしたときに自動で起動します(トレイのメニューと同じ)。",
             SettingKind.Toggle),
@@ -80,6 +92,9 @@ public static class SettingsSchema
     public static string Read(AppSettings s, string key) => Get(key).Key switch
     {
         "talkKey" => s.TalkKey,
+        "recordMode" => s.RecordMode,
+        "startKey" => s.StartKey,
+        "stopKey" => s.StopKey,
         "engine" => s.Engine,
         "model" => s.Model,
         "backend" => s.Backend,
@@ -113,6 +128,27 @@ public static class SettingsSchema
                 // 選択肢に無いキーでも、設定ファイルに手で書いた今の値はそのまま残せる
                 if (v.Length > 0 && string.Equals(v, s.TalkKey, StringComparison.OrdinalIgnoreCase)) return null;
                 return $"トークキー「{v}」は選べません(選べるキー: {string.Join("、", TalkKeyChoices.Select(x => x.Label))})";
+            }
+            case "recordMode":
+            {
+                if (RecordModes.Normalize(v) is { } rm && v.Length > 0) { s.RecordMode = rm; return null; }
+                if (v.Length > 0 && string.Equals(v, s.RecordMode, StringComparison.OrdinalIgnoreCase)) return null;
+                return $"録音のしかた「{v}」は選べません(選べるもの: {string.Join("、", RecordModes.Choices.Select(x => x.Label))})";
+            }
+            case "startKey":
+            case "stopKey":
+            {
+                // 選択肢の名前(「Ctrl+Alt+Space(既定)」)か、読める組み合わせ(設定ファイルの形に揃えて書く)
+                var c = Match(KeyChord.Choices, v);
+                if (c is not null || KeyChord.TryParse(v, out _))
+                {
+                    KeyChord.TryParse(c?.Value ?? v, out var chord);
+                    if (item.Key == "startKey") s.StartKey = chord.ToString(); else s.StopKey = chord.ToString();
+                    return null;
+                }
+                var now = item.Key == "startKey" ? s.StartKey : s.StopKey;
+                if (v.Length > 0 && string.Equals(v, now, StringComparison.OrdinalIgnoreCase)) return null;
+                return $"{item.Label}「{v}」は読めません(例 Ctrl+Alt+Space。文字・数字・Space は Ctrl か Alt と組み合わせます)";
             }
             case "model":
             {

@@ -21,7 +21,8 @@ internal sealed class VerifyHost : ApplicationContext
     private readonly string _scenarioPath, _out, _shots, _settingsPath;
     private AppSettings _settings;
     private Keys _talkKey;
-    private TalkKeyFilter _keys;
+    private ITalkKeyFilter _keys;
+    private bool _chord; // 今の(直前の)録音が開始キーで始めたものか(録音中の案内を終了キーにする)
     private readonly VerifyTextForm _textForm; // 自分の UI スレッドで動く(オーバーレイのスクショの後ろで貼り付けを待たせない)
     private readonly nint _textHandle;
     private readonly OverlayForm _overlay;
@@ -42,6 +43,7 @@ internal sealed class VerifyHost : ApplicationContext
     private OverlayState _lastRecorded = OverlayState.Hidden;
     private string? _lastPrepMilestone;
     private string? _fetchDir; // modelPrep = download で取得したモデルを置くフォルダ(終わったら消す)
+    private Task? _pressAudio; // 最後の press が始めた録音の、流し込む音声の終わり(録音にならなかった押下なら null)
 
     /// <param name="engine">台本の settings.engine に重ねるエンジン(--engine。同じ台本を whisper と haas で比べる)。null なら台本どおり。</param>
     public VerifyHost(string scenarioPath, string outDir, string? engine = null)
@@ -59,7 +61,8 @@ internal sealed class VerifyHost : ApplicationContext
         (_talkKey, _keys) = TalkKeyOf(_settings);
 
         (_textForm, _textHandle) = VerifyTextForm.StartOnOwnThread();
-        _overlay = new OverlayForm(TalkKeys.DisplayName(_talkKey), () => _ptt?.InputLevel ?? 0);
+        _overlay = new OverlayForm(StopKeyName, () => _ptt?.InputLevel ?? 0);
+        _overlay.SetToggle(_chord);
         _ = _overlay.Handle;
         _fg = new VirtualForeground(_textHandle);
 
@@ -71,17 +74,26 @@ internal sealed class VerifyHost : ApplicationContext
         _ = RunAsync();
     }
 
-    /// <summary>設定のトークキーと、それを判定するフィルタ。読めなければ右 Ctrl にし、警告を結果に残す。</summary>
-    private (Keys, TalkKeyFilter) TalkKeyOf(AppSettings s)
+    /// <summary>
+    /// 設定のトークキーと、録音のしかたに合うキーの判定(常駐時と同じ <see cref="TalkKeys.FilterFor"/>)。読めなければ既定にし、警告を結果に残す。
+    /// </summary>
+    private (Keys, ITalkKeyFilter) TalkKeyOf(AppSettings s)
     {
         var key = TalkKeys.Parse(s.TalkKey);
-        if (TalkKeys.InvalidWarning(s.TalkKey) is { } warn)
+        var filter = TalkKeys.FilterFor(s, key, out var warnings);
+        if (TalkKeys.InvalidWarning(s.TalkKey) is { } warn && filter is TalkKeyFilter)
         {
             lock (_result) _result.Warnings.Add(warn);
             AppLog.Write($"talkkey-invalid name={s.TalkKey} fallback={TalkKeys.Default}");
         }
-        return (key, new TalkKeyFilter((int)key));
+        lock (_result) _result.Warnings.AddRange(warnings);
+        AppLog.Write($"record-mode {TalkKeys.Describe(filter, key)}");
+        _chord = filter is ToggleKeyFilter;
+        return (key, filter);
     }
+
+    /// <summary>オーバーレイの録音中の案内に出す、録音を止めるキーの名前(トークキー。開始キーで始めた録音は終了キーの組み合わせ)。</summary>
+    private string StopKeyName => TalkKeys.StopKeyName(_keys, _talkKey, _chord);
 
     private PushToTalkController CreatePtt()
     {
@@ -104,7 +116,7 @@ internal sealed class VerifyHost : ApplicationContext
                             || Engines.IsHaas(next.Engine) != Engines.IsHaas(_settings.Engine); // エンジンが変わっても読み込み直す
         _settings = next;
         (_talkKey, _keys) = TalkKeyOf(next);
-        _overlay.Invoke(() => _overlay.SetTalkKeyName(TalkKeys.DisplayName(_talkKey)));
+        _overlay.Invoke(() => { _overlay.SetTalkKeyName(StopKeyName); _overlay.SetToggle(_chord); });
         _ptt = CreatePtt();
         _ptt.InterimEnabled = Backends.InterimAllowed(_engine.Runtime, true);
         await old.DisposeAsync();
@@ -120,6 +132,7 @@ internal sealed class VerifyHost : ApplicationContext
             _modelReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _ = LoadEngineAsync();
         }
+        else if (_modelReady.Task.IsFaulted) _ptt.SetModelFailed(Engines.FailedOverlayText(_settings.Engine)); // 用意の失敗は起動し直しても続く
         else _ptt.SetModelStatus(_modelReady.Task.IsCompletedSuccessfully);
     }
 
@@ -127,9 +140,13 @@ internal sealed class VerifyHost : ApplicationContext
     private void SettingsShot(string name)
     {
         var file = $"{++_shotNo:00}-設定画面-{Safe(name)}.png";
-        _settingsForm!.SaveScreenshot(Path.Combine(_shots, file));
-        lock (_result) _result.Shots.Add(new ShotRecord { Name = name, AtMs = _sw.ElapsedMilliseconds, State = "設定画面", Screenshot = "shots/" + file, Capture = "render" });
-        AppLog.Write($"shot {name} state=設定画面");
+        var shot = _settingsForm!.SaveScreenshot(Path.Combine(_shots, file));
+        lock (_result) _result.Shots.Add(new ShotRecord
+        {
+            Name = name, AtMs = _sw.ElapsedMilliseconds, State = "設定画面", Screenshot = "shots/" + file, Capture = shot.Capture,
+            Values = shot.Values, Filled = shot.Filled.Count == 0 ? null : shot.Filled,
+        });
+        AppLog.Write($"shot {name} state=設定画面 capture={shot.Capture}");
     }
 
     private void OnOverlay(OverlayView v)
@@ -138,14 +155,14 @@ internal sealed class VerifyHost : ApplicationContext
         // モデル準備中は進み具合が 1% ごとに変わる: 記録とスクショは段階が変わるか 10% の刻みを跨いだときだけ
         if (v.State == OverlayState.ModelPreparing)
         {
-            var k = ModelPrepProgress.Milestone(v.Detail);
+            var k = v.Label + "|" + ModelPrepProgress.Milestone(v.Detail); // 準備中 → 使えない は必ず記録する
             if (_lastRecorded == OverlayState.ModelPreparing && k == _lastPrepMilestone) return;
             _lastPrepMilestone = k;
         }
         _lastRecorded = v.State;
         var rec = new StateRecord
         {
-            AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(TalkKeys.DisplayName(_talkKey)),
+            AtMs = _sw.ElapsedMilliseconds, State = v.Label, Text = v.State == OverlayState.Hidden ? "" : v.Text(StopKeyName, _chord),
             InterimChars = v.Interim?.Length ?? 0,
         };
         if (v.State != OverlayState.Hidden)
@@ -193,12 +210,61 @@ internal sealed class VerifyHost : ApplicationContext
             if (!v.Swallow) _result.PassedKeys.Add(ev);
             foreach (var vk in v.InjectDown) _result.SentKeys.Add($"{(Keys)vk} down");
         }
+        if (v.Signal == TalkKeySignal.TalkDown)
+        {
+            // 開始キーで始めた録音(押さない録音・その場の押さない録音)なら、録音中の案内を終了キーにする(常駐時と同じ)
+            _chord = TalkKeys.ChordStarted(_keys);
+            var stopName = StopKeyName; bool chord = _chord;
+            _overlay.BeginInvoke(() => { _overlay.SetTalkKeyName(stopName); _overlay.SetToggle(chord); });
+        }
         switch (v.Signal)
         {
+            case TalkKeySignal.TalkDown when _chord && _keys is IChordRecording c:
+                if (!_ptt.OnToggleStart()) c.Reset(); // 録音が始まらなければ、次の開始キーをもう一度開始として受ける(常駐時と同じ)
+                break;
             case TalkKeySignal.TalkDown: _ptt.OnTalkKeyDown(); break;
             case TalkKeySignal.TalkUp: _ptt.OnTalkKeyUp(); break;
             case TalkKeySignal.OtherKeyWhileTalk: _ptt.OnOtherKeyDown(); break;
         }
+    }
+
+    /// <summary>
+    /// 台本の key: キーを押して離す。「Ctrl+V」のように + でつないだ組み合わせは、修飾キー(Ctrl / Shift / Alt)を押したまま最後のキーを押して離し、修飾キーを離す
+    /// (どのキーもトークキーの判定に通す。修飾キーはトークキーでない側の左右を使う)。
+    /// 検証用のテキスト欄が前面のときの Ctrl+V は、利用者の貼り付けとして検証のクリップボードの中身を欄のカーソル位置へ入れる。
+    /// </summary>
+    private void KeyChord(string chord)
+    {
+        var parts = chord.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) throw new InvalidDataException($"キーの名前を読めない: {chord}");
+        var mods = parts[..^1].Select(Modifier).ToArray();
+        var last = parts[^1];
+        foreach (var m in mods) Key(m, down: true);
+        Key(last, down: true);
+        Key(last, down: false);
+        foreach (var m in mods.Reverse()) Key(m, down: false);
+        bool ctrlV = mods.Length == 1 && mods[0].EndsWith("ControlKey", StringComparison.Ordinal) && last.Equals("V", StringComparison.OrdinalIgnoreCase);
+        if (ctrlV && _fg.Name == "textbox")
+        {
+            var text = _clip.Text ?? "";
+            _textForm.Invoke(() => _textForm.Box.SelectedText = text);
+            AppLog.Write($"user-paste chars={text.Length}"); // 本文は書かない
+        }
+    }
+
+    /// <summary>修飾キーの名前(Ctrl / Shift / Alt。Keys の名前も可)を、トークキーでない側の左右のキーに。</summary>
+    private string Modifier(string name)
+    {
+        (Keys l, Keys r) = name.ToLowerInvariant() switch
+        {
+            "ctrl" or "control" => (Keys.LControlKey, Keys.RControlKey),
+            "shift" => (Keys.LShiftKey, Keys.RShiftKey),
+            "alt" or "menu" => (Keys.LMenu, Keys.RMenu),
+            "win" or "windows" => (Keys.LWin, Keys.RWin),
+            _ => (Keys.None, Keys.None),
+        };
+        if (l == Keys.None) return name;
+        return (_talkKey == l ? r : l).ToString();
     }
 
     /// <summary>本物の前面ウィンドウを調べて数える(UI スレッド)。</summary>
@@ -283,7 +349,7 @@ internal sealed class VerifyHost : ApplicationContext
                 AppLog.Write($"engine-invalid value={_settings.Engine} fallback={Engines.Whisper}");
             }
             bool haas = Engines.IsHaas(_settings.Engine);
-            if (haas && HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw)
+            if (HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw) // カスタム語彙はどちらのエンジンでも使う
             {
                 lock (_result) _result.Warnings.Add(kw);
                 AppLog.Write("keywords-invalid");
@@ -335,7 +401,7 @@ internal sealed class VerifyHost : ApplicationContext
         catch (Exception ex)
         {
             AppLog.Write("engine-error " + ex.Message);
-            _ptt.SetModelStatus(false, Engines.FailedTrayStatus(_settings.Engine)); // 常駐時と同じ
+            _ptt.SetModelFailed(Engines.FailedOverlayText(_settings.Engine)); // 常駐時と同じ
             lock (_result)
             {
                 _result.EngineError = ex.Message;
@@ -384,17 +450,31 @@ internal sealed class VerifyHost : ApplicationContext
                     break;
                 case "press":
                     _recorder.NextAudio = a.Audio is null ? [] : Audio.ReadWav16kMono(Scenario.ResolvePath(_scenarioPath, a.Audio));
-                    Key(a.Key, down: true);
+                    var before = _recorder.AudioEnd;
+                    // 押さない録音の開始キー(Ctrl+Alt+Space のような組み合わせ)は押して離す。単独のキーは押したまま(トークキー)
+                    if (a.Key?.Contains('+') == true) KeyChord(a.Key); else Key(a.Key, down: true);
+                    // この押下で始めた録音(押したままの押し直しなら流し込み中の録音)。録音にならなければ null
+                    var after = _recorder.AudioEnd;
+                    _pressAudio = after != before ? after : before is { IsCompleted: false } ? before : null;
                     break;
                 case "holdUntilAudioEnd":
-                    await _recorder.WaitAudioEndAsync();
+                    // 押下が録音になっていなければ流し終わりは来ない: 待たずに返し、理由を残す(台本を打ち切りまで黙って止めない)
+                    var playing = _pressAudio;
+                    var model = _modelReady.Task.IsCompletedSuccessfully ? ModelReadiness.Ready
+                        : _modelReady.Task.IsFaulted ? ModelReadiness.Failed : ModelReadiness.Preparing;
+                    if (HoldUntilAudioEnd.SkipReason(playing is not null, model) is { } skip)
+                    {
+                        AppLog.Write($"hold-skip reason={skip}");
+                        lock (_result) _result.HoldSkips.Add(skip);
+                    }
+                    else await playing!;
                     break;
                 case "release":
-                    Key(a.Key, down: false);
+                    // 押さない録音の終了キー(組み合わせ)は押して離す
+                    if (a.Key?.Contains('+') == true) KeyChord(a.Key); else Key(a.Key, down: false);
                     break;
                 case "key":
-                    Key(a.Key ?? "C", down: true);
-                    Key(a.Key ?? "C", down: false);
+                    KeyChord(a.Key ?? "C");
                     break;
                 case "focus":
                     _fg.Focus(a.Window ?? "textbox");
@@ -429,6 +509,9 @@ internal sealed class VerifyHost : ApplicationContext
                         {
                             lock (_result) { _result.SavedSettings = next; _result.SettingsChanged = changed; }
                         };
+                        // 開くときの窓の動き(下から浮き上がる)を止める: 動いている間に画面から写すと位置がずれる
+                        int off = 1;
+                        Native.DwmSetWindowAttribute(_settingsForm.Handle, Native.DWMWA_TRANSITIONS_FORCEDISABLED, ref off, sizeof(int));
                         _settingsForm.Show();
                         _settingsForm.Refresh();
                         SettingsShot(a.Name ?? "開いた");
@@ -512,15 +595,16 @@ internal sealed class VerifyRecorder : IRecorder
 {
     public const int MicOpenDelayMs = 150;
     public float[] NextAudio { get; set; } = [];
-    private TaskCompletionSource _audioEnd = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource? _audioEnd;
 
-    public Task WaitAudioEndAsync() => _audioEnd.Task;
+    /// <summary>最後に始めた録音の、流し込む音声の終わり。まだ一度も録音を始めていなければ null。</summary>
+    public Task? AudioEnd => _audioEnd?.Task;
 
     public IRecording Start(Action onStarted)
     {
         var audio = NextAudio;
-        _audioEnd = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        var end = _audioEnd;
+        var end = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _audioEnd = end;
         var r = new Rec(audio);
         _ = Task.Run(async () =>
         {
