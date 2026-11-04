@@ -152,7 +152,7 @@ internal sealed class TrayApp : ApplicationContext
                 _overlay.BeginInvoke(() => _tray.ShowBalloonTip(8000, "Voice2Txt", ew, ToolTipIcon.Warning));
             }
             bool haas = Engines.IsHaas(_settings.Engine);
-            if (haas && HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw)
+            if (HaasKeywords.InvalidWarning(_settings.Keywords) is { } kw) // カスタム語彙はどちらのエンジンでも使う
             {
                 AppLog.Write("keywords-invalid"); // 語そのものは書かない
                 _overlay.BeginInvoke(() => _tray.ShowBalloonTip(8000, "Voice2Txt", kw, ToolTipIcon.Warning));

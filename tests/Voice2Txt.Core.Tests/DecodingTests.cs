@@ -48,6 +48,33 @@ public class DecodingTests
         Assert.All(Decoding.InitialPrompt, c => Assert.True(c is >= 'ぁ' and <= 'ゖ' or 'ー' or '、' or '。' or >= '0' and <= '9', $"かな・数字以外: {c}"));
     }
 
+    // カスタム語彙(keywords)は engine=whisper でも初期プロンプトに表記を足して効かせる(「そくたつ」→「速達」。BLK-transcriber-20261104-1100)
+    [Fact]
+    public void カスタム語彙が空なら初期プロンプトは今までどおり()
+    {
+        Assert.Equal(Decoding.InitialPrompt, Decoding.PromptFor(null));
+        Assert.Equal(Decoding.InitialPrompt, Decoding.PromptFor([]));
+        Assert.Equal(Decoding.InitialPrompt, Decoding.PromptFor(["", "bad=", "a=b=c"])); // 読めない語は渡さない
+    }
+
+    [Fact]
+    public void カスタム語彙の表記を読点でつないで初期プロンプトの前に足し_読みは渡さない()
+    {
+        var p = Decoding.PromptFor(["速達", "Haas = ハース , ハウス", "速達", "議事録"]);
+        Assert.Equal("速達、Haas、議事録、" + Decoding.InitialPrompt, p);
+        Assert.DoesNotContain("ハース", p);
+    }
+
+    [Fact]
+    public void カスタム語彙を足しても数える列の前置きは句点で閉じた形のまま_末尾は言い淀み()
+    {
+        // 語彙を句点で閉じて前に置くと「…ここのつ、とお。」の「とお」が「等」に戻る。語彙と数える列の間は読点
+        var p = Decoding.PromptFor(["速達"]);
+        Assert.DoesNotContain("速達。", p);
+        Assert.Contains("、ここのつ、10。", p);
+        Assert.EndsWith("えっと", p);
+    }
+
     [Fact]
     public void 速さを優先する設定は既定でオフ_写しても残る()
     {

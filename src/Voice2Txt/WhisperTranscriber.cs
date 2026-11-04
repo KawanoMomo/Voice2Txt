@@ -34,8 +34,11 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
     /// <see cref="Recovery.TranscribeAsync"/> が最後の区切りの終わりから続きを渡し直す。
     /// </summary>
     /// <param name="preferSpeed">設定 preferSpeed。真なら復号ごとに、渡す音声の長さに縮めた窓(<see cref="Decoding.AudioContext"/>)の処理器を使う。</param>
-    public static WhisperTranscriber Load(string modelPath, string? modelName = null, double silenceThreshold = 0.01, string? backend = null, bool preferSpeed = false)
+    /// <param name="keywords">設定 keywords(カスタム語彙)。表記を初期プロンプトに足す(<see cref="Decoding.PromptFor"/>)。</param>
+    public static WhisperTranscriber Load(string modelPath, string? modelName = null, double silenceThreshold = 0.01, string? backend = null, bool preferSpeed = false,
+        IEnumerable<string>? keywords = null)
     {
+        var prompt = Decoding.PromptFor(keywords);
         // バックエンドは設定 backend の順に読めるものを使う(auto: CUDA → Vulkan → CPU)。プロセスで最初に読めたものが使われ続ける
         RuntimeOptions.RuntimeLibraryOrder = Backends.Order(backend).Select(n => Enum.Parse<RuntimeLibrary>(n)).ToList();
         Recovery.Diag ??= AppLog.Write;
@@ -43,7 +46,7 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
         var f = heads is { } h
             ? WhisperFactory.FromPath(modelPath, new WhisperFactoryOptions { UseDtwTimeStamps = true, HeadsPreset = h })
             : WhisperFactory.FromPath(modelPath);
-        var p = new ProcessorPool(ctx => WithContext(f.CreateBuilder().WithLanguage(Decoding.Language).WithPrompt(Decoding.InitialPrompt).WithTokenTimestamps(), ctx).Build(), preferSpeed);
+        var p = new ProcessorPool(ctx => WithContext(f.CreateBuilder().WithLanguage(Decoding.Language).WithPrompt(prompt).WithTokenTimestamps(), ctx).Build(), preferSpeed);
         var r = heads is null ? null : new ProcessorPool(ctx => WithContext(f.CreateBuilder().WithLanguage("auto").WithNoContext(), ctx).Build(), preferSpeed);
         var rt = RuntimeOptions.LoadedLibrary?.ToString() ?? "unknown";
         return new WhisperTranscriber(f, p, r, silenceThreshold, rt);
@@ -217,7 +220,7 @@ internal static class EngineLoader
             if (pct != last) { last = pct; onProgress($"{p.Phase} {pct}%"); }
         }), ct);
         onProgress("読み込み");
-        var t = await Task.Run(() => WhisperTranscriber.Load(path, entry.Name, s.SilenceThreshold, s.Backend, s.PreferSpeed), ct);
+        var t = await Task.Run(() => WhisperTranscriber.Load(path, entry.Name, s.SilenceThreshold, s.Backend, s.PreferSpeed, s.Keywords), ct);
         // 暖機: 最初の文字起こしは GPU の初期化(初回は CUDA カーネルの JIT も)で数秒〜十秒かかる。準備中のうちに無音 1 秒で済ませておく
         onProgress("暖機");
         await t.TranscribeAsync(new float[Audio.SampleRate], null, ct);

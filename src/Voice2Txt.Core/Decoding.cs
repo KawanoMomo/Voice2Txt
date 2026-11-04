@@ -18,6 +18,22 @@ public static class Decoding
     /// </summary>
     public const string InitialPrompt = "ここのつ、10。えーと、あの、ええと、その、まあ、えっと";
 
+    /// <summary>
+    /// カスタム語彙(設定 keywords)を足した初期プロンプト。語彙が無ければ <see cref="InitialPrompt"/> のまま。
+    /// 語彙の表記(「表記=よみ」の読みは使わない。whisper は読みを受け取れない)を読点でつなぎ、読点で <see cref="InitialPrompt"/> の前に続ける:
+    /// 書いてほしい表記を復号の文脈として見せ、同音の語をその表記で書かせる(「そくたつ」→「速達」)。末尾は今までどおり言い淀みで終える
+    /// (末尾は最初の語の当て方を変えるので動かさない)。語彙を句点で閉じると数える列の前置き(ここのつ、10。)が効かなくなり「とお」が「等」に戻る。
+    /// 語彙を数と言い淀みの間に置くと、語彙が多いとき文頭の感嘆(「ああ、」)が落ちる。
+    /// whisper.cpp はプロンプトが長すぎると先頭を捨てるので、語彙が多くても数・言い淀みの部分は残る。
+    /// 読めない語(<see cref="HaasKeywords.Normalize"/> が null)は渡さない。
+    /// </summary>
+    public static string PromptFor(IEnumerable<string>? keywords)
+    {
+        var words = (keywords ?? []).Select(HaasKeywords.Normalize).OfType<string>()
+            .Select(w => w.Split('=')[0].Trim()).Where(w => w.Length > 0).Distinct().ToList();
+        return words.Count == 0 ? InitialPrompt : string.Join("、", words) + "、" + InitialPrompt;
+    }
+
     /// <summary>whisper のエンコーダが 1 回に読む窓(30 秒)の長さ(audio_ctx。1 秒 = 50)。</summary>
     public const int FullAudioContext = 1500;
 
