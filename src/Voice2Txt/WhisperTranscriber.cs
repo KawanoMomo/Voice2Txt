@@ -44,8 +44,10 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
         IEnumerable<string>? keywords = null)
     {
         var prompt = Decoding.PromptFor(keywords);
-        var bias = new KeywordBias(keywords);
-        var hook = bias.IsEmpty ? null : new KeywordHook(bias);
+        // 語彙があれば、寄せた文の読みを確かめる IME を開く(開けなければ読みで確かめず、寄せる点は小さいまま)
+        var ime = Decoding.KeywordWords(keywords).Count == 0 ? null : ImeReading.TryOpen();
+        var bias = new KeywordBias(keywords, ime is null ? null : ime.Read);
+        var hook = bias.IsEmpty ? null : new KeywordHook(bias, ime);
         // バックエンドは設定 backend の順に読めるものを使う(auto: CUDA → Vulkan → CPU)。プロセスで最初に読めたものが使われ続ける
         RuntimeOptions.RuntimeLibraryOrder = Backends.Order(backend).Select(n => Enum.Parse<RuntimeLibrary>(n)).ToList();
         Recovery.Diag ??= AppLog.Write;
@@ -61,7 +63,8 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
         }, preferSpeed);
         var r = heads is null ? null : new ProcessorPool(ctx => WithContext(f.CreateBuilder().WithLanguage("auto").WithNoContext(), ctx).Build(), preferSpeed);
         var rt = RuntimeOptions.LoadedLibrary?.ToString() ?? "unknown";
-        AppLog.Write($"keyword-bias words={bias.Words.Count} hooked={hook?.Enabled ?? false}"); // 語彙の本文は書かない
+        AppLog.Write($"keyword-bias words={bias.Words.Count} hooked={hook?.Enabled ?? false} reading={(ime is null ? "none" : "ime")}"); // 語彙の本文は書かない
+        if (hook is { Enabled: false }) hook.Dispose(); // 掛けられなかった(IME も閉じる)
         return new WhisperTranscriber(f, p, r, silenceThreshold, rt, hook?.Enabled == true ? hook : null);
     }
 
@@ -128,6 +131,7 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
             return await DecodeGuardedAsync(p, samples, guard, ct);
         }
         int mark = guard?.Length ?? 0;
+        if (kw.Bias.Reading is not null) return await DecodeByReadingAsync(kw.Bias, p, samples, guard, mark, ct);
         kw.Bias.Begin(on: true);
         var biased = await DecodeGuardedAsync(p, samples, guard, ct);
         var b = kw.Bias.Result;
@@ -137,13 +141,54 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var plain = await DecodeGuardedAsync(p, samples, guard, ct);
         var a = kw.Bias.Result;
-        bool take = KeywordBias.Accept(string.Concat(plain.Select(s => s.Text)), string.Concat(biased.Select(s => s.Text)), a, b, kw.Bias.Words);
+        bool take = KeywordBias.Accept(string.Concat(plain.Select(s => s.Text)), string.Concat(biased.Select(s => s.Text)), a, b, kw.Bias.Words, kw.Bias.Reading);
         // 本文・語彙は書かない
         AppLog.Write($"keyword-bias flipped=1 taken={(take ? 1 : 0)} rest={b.Score - a.Score + b.Gap:F2} unreliable={(a.Unreliable || b.Unreliable ? 1 : 0)} ms={sw.ElapsedMilliseconds}");
         if (!take) return plain;
         if (guard is not null) { guard.Length = mark; foreach (var s in biased) guard.Append(s.Text); }
         return biased;
     }
+
+    /// <summary>
+    /// 読みで確かめられるときのカスタム語彙の当て方: まず寄せずに復号し、語彙の頭が最良の語から <see cref="KeywordBias.Boost"/> 未満の差にあった手
+    /// (<see cref="KeywordBias.Candidates"/>)を差の小さい順に 1 つずつ、その手でだけ語彙を選ばせて復号し直す。採るか(<see cref="KeywordBias.Accept"/>)は
+    /// 語彙の中だけが変わり・残りの確からしさが下がらず・読みが同じこと。採れたら、その後ろの手から同じように続ける。復号し直すのは発話ごとに高々 <see cref="MaxForced"/> 回。
+    /// </summary>
+    private async Task<List<Seg>> DecodeByReadingAsync(KeywordBias bias, WhisperProcessor p, float[] samples, StringBuilder? guard, int mark, CancellationToken ct)
+    {
+        bias.Begin(on: false);
+        var cur = await DecodeGuardedAsync(p, samples, guard, ct);
+        var curScore = bias.Result;
+        var queue = bias.Candidates.Where(bias.Plausible).ToList();
+        var forced = new List<Candidate>();
+        int tries = 0, taken = 0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (queue.Count > 0 && tries < MaxForced)
+        {
+            var c = queue[0];
+            queue.RemoveAt(0);
+            tries++;
+            if (guard is not null) guard.Length = mark;
+            bias.BeginForced([.. forced, c]);
+            var next = await DecodeGuardedAsync(p, samples, guard, ct);
+            var b = bias.Result;
+            var text = string.Concat(next.Select(s => s.Text));
+            if (b.Flipped && KeywordBias.Accept(string.Concat(cur.Select(s => s.Text)), text, curScore, b, bias.Words, bias.Reading))
+            {
+                forced.Add(c);
+                taken++;
+                cur = next;
+                curScore = new DecodeScore(false, b.Unreliable, b.Score + b.Gap, 0); // 次の比べる相手(寄せた分は除く)
+                queue = bias.Candidates.Where(bias.Plausible).ToList();
+            }
+        }
+        if (guard is not null && tries > 0) { guard.Length = mark; foreach (var s in cur) guard.Append(s.Text); }
+        if (tries > 0) AppLog.Write($"keyword-bias tries={tries} taken={taken} ms={sw.ElapsedMilliseconds}"); // 本文・語彙は書かない
+        return cur;
+    }
+
+    /// <summary>読みで確かめるとき、1 回の発話で語彙を選ばせて復号し直す回数の上限(1 回 0.25 秒前後)。</summary>
+    private const int MaxForced = 3;
 
     Task<(string Text, double NoSpeech)> ISpanDecoder.DecodeSpanAsync(float[] samples, CancellationToken ct) => RecoverAsync(_recover!.For(samples), samples, "span-decode", _fit ? new StringBuilder() : null, ct);
 
@@ -231,13 +276,14 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
         // whisper.h の whisper_token_data(id, tid, p, plog, pt, ptsum, t0, t1, t_dtw, vlen)の大きさ。語の番号は先頭
         private const int TokenDataSize = 56;
         private GCHandle _self;
+        private readonly IDisposable? _reading;
         private int[] _ids = new int[256];
         private int _nVocab;
 
         public KeywordBias Bias { get; }
         public bool Enabled { get; private set; } = true;
 
-        public KeywordHook(KeywordBias bias) { Bias = bias; _self = GCHandle.Alloc(this); }
+        public KeywordHook(KeywordBias bias, IDisposable? reading) { Bias = bias; _reading = reading; _self = GCHandle.Alloc(this); }
 
         public void Disable() => Enabled = false;
 
@@ -280,12 +326,16 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
 
         private void Step(IntPtr ctx, IntPtr tokens, int n, float* logits)
         {
-            if (!Bias.HasVocabulary && !LoadVocabulary(ctx)) { Enabled = false; return; }
-            int nv = _nVocab;
-            if (n < 0 || n > 4096) return;
-            if (_ids.Length < n) _ids = new int[Math.Max(n, _ids.Length * 2)];
-            for (int i = 0; i < n; i++) _ids[i] = *(int*)((byte*)tokens + (long)i * TokenDataSize);
-            Bias.OnLogits(_ids.AsSpan(0, n), new Span<float>(logits, nv));
+            // 温度を上げたやり直しでは複数の列の手が別々のスレッドから来る(状態を共有するので 1 手ずつ)
+            lock (this)
+            {
+                if (!Bias.HasVocabulary && !LoadVocabulary(ctx)) { Enabled = false; return; }
+                int nv = _nVocab;
+                if (n < 0 || n > 4096) return;
+                if (_ids.Length < n) _ids = new int[Math.Max(n, _ids.Length * 2)];
+                for (int i = 0; i < n; i++) _ids[i] = *(int*)((byte*)tokens + (long)i * TokenDataSize);
+                Bias.OnLogits(_ids.AsSpan(0, n), new Span<float>(logits, nv));
+            }
         }
 
         private bool LoadVocabulary(IntPtr ctx)
@@ -318,6 +368,7 @@ internal sealed class WhisperTranscriber : IEngine, ISpanDecoder
         {
             Enabled = false;
             if (_self.IsAllocated) _self.Free();
+            _reading?.Dispose();
         }
     }
 
