@@ -9,6 +9,18 @@ public sealed class AppSettings
     /// <summary>トークキー。System.Windows.Forms.Keys の名前(例: RControlKey, RMenu)。</summary>
     public string TalkKey { get; set; } = "RControlKey";
 
+    /// <summary>
+    /// 録音のしかた(<see cref="RecordModes"/>): hold(初期値。トークキーを押している間だけ録音)/ toggle(押さない録音。<see cref="StartKey"/> で始め <see cref="StopKey"/> で止める。
+    /// トークキーは録音に使わず、操作中のアプリへ素通しする)。
+    /// </summary>
+    public string RecordMode { get; set; } = RecordModes.Hold;
+
+    /// <summary>押さない録音を始めるキーの組み合わせ(<see cref="KeyChord"/>。例 Ctrl+Alt+Space)。</summary>
+    public string StartKey { get; set; } = KeyChord.DefaultStart;
+
+    /// <summary>押さない録音を止めて文字起こしするキーの組み合わせ。開始キーと同じなら押すたびに始める・止めるが切り替わる。</summary>
+    public string StopKey { get; set; } = KeyChord.DefaultStop;
+
     /// <summary>文字起こしのエンジン: whisper(初期値。無くても同じ)/ haas(Haas-ja-v1.0 を speech.cpp で。<see cref="Engines"/>)。</summary>
     public string Engine { get; set; } = Engines.Whisper;
 
@@ -31,7 +43,8 @@ public sealed class AppSettings
     public List<string> Fillers { get; set; } = [.. Core.Fillers.DefaultWords];
 
     /// <summary>
-    /// カスタム語彙(engine が haas のときだけ。speech.cpp の keywords)。1 つの語は「表記」か「表記=読み,読み」(例 Haas=ハース)。
+    /// カスタム語彙(どちらのエンジンでも。haas は speech.cpp の keywords、whisper は表記を初期プロンプトに足し(<see cref="Decoding.PromptFor"/>)、復号を表記へ寄せる(<see cref="KeywordBias"/>))。
+    /// 1 つの語は「表記」か「表記=読み,読み」(例 Haas=ハース。読みは haas だけが使う)。
     /// 空なら渡さない。読めない語は渡さずに知らせる(<see cref="HaasKeywords"/>)。
     /// </summary>
     public List<string> Keywords { get; set; } = [];
@@ -95,7 +108,7 @@ public sealed class AppSettings
     /// <summary>o の値をすべて写す(設定画面で保存した値を、動いている側の設定にも揃える)。</summary>
     public void CopyFrom(AppSettings o)
     {
-        TalkKey = o.TalkKey; Engine = o.Engine; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
+        TalkKey = o.TalkKey; RecordMode = o.RecordMode; StartKey = o.StartKey; StopKey = o.StopKey; Engine = o.Engine; Model = o.Model; MinPressSeconds = o.MinPressSeconds; SilenceThreshold = o.SilenceThreshold;
         AutoStart = o.AutoStart; RemoveFillers = o.RemoveFillers; Fillers = [.. o.Fillers ?? []]; Keywords = [.. o.Keywords ?? []]; ShowInterim = o.ShowInterim;
         FetchCudaRuntime = o.FetchCudaRuntime; Backend = o.Backend; Delivery = o.Delivery; PreferSpeed = o.PreferSpeed;
     }

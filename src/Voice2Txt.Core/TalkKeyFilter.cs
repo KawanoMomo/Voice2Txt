@@ -16,11 +16,17 @@ public readonly record struct KeyVerdict(bool Swallow, TalkKeySignal Signal, int
 /// トークキーは握りつぶし(リピートも)、押下中に別のキーが押されたら発話を取り消し、トークキーを修飾キーとして
 /// 合成した押下に続けて同じキーを送る(ショートカットを効かせる)。以後トークキーを離すまでは素通し。それ以外は素通し。
 /// </summary>
-public sealed class TalkKeyFilter(int talkVk)
+public sealed class TalkKeyFilter(int talkVk) : ITalkKeyFilter
 {
     private bool _talkDown, _passThrough;
 
     public int TalkVk => talkVk;
+
+    /// <summary>トークキーを押しているか(他のキーで取り消して修飾キーとして素通し中も含む)。</summary>
+    public bool Down => _talkDown;
+
+    /// <summary>トークキーを押して録音している最中か(他のキーで取り消していない)。</summary>
+    public bool Talking => _talkDown && !_passThrough;
 
     public KeyVerdict OnKey(int vk, bool down)
     {

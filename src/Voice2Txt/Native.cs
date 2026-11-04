@@ -34,6 +34,10 @@ internal static class Native
     [DllImport("user32.dll")] public static extern nint GetForegroundWindow();
     [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint n, INPUT[] inputs, int size);
     [DllImport("dwmapi.dll")] public static extern int DwmFlush();
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+    [DllImport("user32.dll")] public static extern nint WindowFromPoint(POINT p);
+    public const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
+    [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(nint hwnd, int attr, ref int value, int size);
     public const int SRCCOPY = 0x00CC0020, CAPTUREBLT = 0x40000000;
     [DllImport("user32.dll")] public static extern nint GetDC(nint hwnd);
     [DllImport("user32.dll")] public static extern int ReleaseDC(nint hwnd, nint hdc);

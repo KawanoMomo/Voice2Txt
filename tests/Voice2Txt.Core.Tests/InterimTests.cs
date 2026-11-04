@@ -186,6 +186,18 @@ public class InterimTests
     }
 
     [Fact]
+    public async Task 途中経過も確定版と同じく日本語の文の間の空白を詰めて見せる()
+    {
+        await using var r = new Rig(new PttOptions(InterimIntervalMs: 10));
+        r.Recorder.NextAudio = Full;
+        r.Recorder.SnapshotAudio = Half;
+        r.Engine.Text = _ => "明日やります。 以上です";
+        r.Ptt.OnTalkKeyDown();
+        Assert.True(await Until(() => r.Ptt.CurrentView.Interim is not null));
+        Assert.Equal("明日やります。以上です", r.Ptt.CurrentView.Interim);
+    }
+
+    [Fact]
     public void 設定で途中経過を切り替えられる_初期値はオン()
     {
         Assert.True(new AppSettings().ShowInterim);

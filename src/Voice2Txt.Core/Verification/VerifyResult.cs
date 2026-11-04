@@ -51,6 +51,9 @@ public sealed class VerifyResult
     /// <summary>設定の問題など、利用者に知らせた警告(例: talkKey を読めない)。</summary>
     public List<string> Warnings { get; set; } = [];
 
+    /// <summary>台本の holdUntilAudioEnd を待たずに返した理由(押下が録音になっていなかった。例: モデル準備中のため録音していない)。順に。</summary>
+    public List<string> HoldSkips { get; set; } = [];
+
     /// <summary>設定画面で最後に保存した設定(保存していなければ null)と、そのとき変わった項目のキー。</summary>
     public AppSettings? SavedSettings { get; set; }
     public List<string>? SettingsChanged { get; set; }
@@ -134,6 +137,10 @@ public sealed class ShotRecord
     public int HintRowY { get; set; }
     public string? Screenshot { get; set; }
     public string? Capture { get; set; }
+    /// <summary>設定画面の shot: 撮った時点で画面に出ている各項目の値(キー → 設定ファイルの形の値)。settings.json と突き合わせる。</summary>
+    public Dictionary<string, string>? Values { get; set; }
+    /// <summary>設定画面の shot: 値が欄に写らず、検証モードが書き足した選択式の項目のキー(無ければ null)。</summary>
+    public List<string>? Filled { get; set; }
 }
 
 public static class TextSimilarity
@@ -197,6 +204,8 @@ public static class Evaluator
                 }
                 foreach (var w in Absent(x, got.Text)) fails.Add($"{i + 1} 件目に「{w}」が残っている");
                 foreach (var w in Missing(x, got.Text)) fails.Add($"{i + 1} 件目に「{w}」が無い");
+                if (x.EndsWith is { Length: > 0 } end && !got.Text.EndsWith(end, StringComparison.Ordinal))
+                    fails.Add($"{i + 1} 件目の終わりが「{end}」でない(終わり「{(got.Text.Length > 0 ? got.Text[^1..] : "")}」)");
             }
             for (int i = 1; i < r.Deliveries.Count; i++)
                 if (r.Deliveries[i].Seq < r.Deliveries[i - 1].Seq) fails.Add("届いた順が録音した順と違う");
@@ -238,6 +247,8 @@ public static class Evaluator
             fails.Add($"合成して送ったキー [{string.Join(",", r.SentKeys)}](期待 [{string.Join(",", sk)}])");
         if (e.Warnings is { } ws && !r.Warnings.SequenceEqual(ws))
             fails.Add($"警告 [{string.Join(",", r.Warnings)}](期待 [{string.Join(",", ws)}])");
+        if (e.HoldSkips is { } hs && !r.HoldSkips.SequenceEqual(hs))
+            fails.Add($"holdUntilAudioEnd を待たずに返した理由 [{string.Join(",", r.HoldSkips)}](期待 [{string.Join(",", hs)}])");
         if (e.SavedSettings is { } want)
         {
             if (r.SavedSettings is null) fails.Add("設定画面で保存されていない");
@@ -304,6 +315,10 @@ public static class Evaluator
                     continue;
                 }
                 if (x.State is not null && x.State != got.State) fails.Add($"shot「{x.Name}」の状態 {got.State}(期待 {x.State})");
+                if (x.Values is { } vs)
+                    foreach (var (k, v) in vs)
+                        if (got.Values is null || !got.Values.TryGetValue(k, out var gv) || !string.Equals(gv, v, StringComparison.OrdinalIgnoreCase))
+                            fails.Add($"shot「{x.Name}」の {k} の値 {(got.Values?.GetValueOrDefault(k) ?? "(無し)")}(期待 {v})");
                 if (x.MinMeter is { } lo && got.Meter < lo) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(下限 {lo:0.00})");
                 if (x.MaxMeter is { } hi && got.Meter > hi) fails.Add($"shot「{x.Name}」の音量バー {got.Meter:0.00}(上限 {hi:0.00})");
                 if (x.MinInterimChars is { } ilo && got.InterimChars < ilo) fails.Add($"shot「{x.Name}」の途中経過 {got.InterimChars} 文字(下限 {ilo})");
