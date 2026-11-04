@@ -17,8 +17,27 @@ public class DecodingTests
     [Fact]
     public void 初期プロンプトは数える列の終わりの十を数字で見せる()
     {
-        // 「…ここのつ、とお。」の「とお」は「つ」が付かない短い数で、前置きが無いと「等」になる
-        Assert.EndsWith("9つ、10。", Decoding.InitialPrompt);
+        // 「…ここのつ、とお。」の「とお」は「つ」が付かない短い数で、前置きが無いと「等」になる。数える列は句点で閉じて先頭に置く
+        Assert.StartsWith("ここのつ、10。", Decoding.InitialPrompt);
+    }
+
+    [Fact]
+    public void 初期プロンプトは言い淀みで終え_句点でも数字でも終えない()
+    {
+        // 末尾は発話の最初の語の直前の文脈になる。句点(「。」だけでも)で終えると文頭の四字熟語の切れ目が変わり(「いちごいちえの」→「一期一への」)、
+        // 数字で終えると文頭の稀な語が同音の別の書き方になる(「まどりは」→「窓りは」)。言い淀みの後はどの語でも始まる
+        Assert.EndsWith("えっと", Decoding.InitialPrompt);
+        Assert.False(Decoding.InitialPrompt.EndsWith('。'));
+        Assert.False(char.IsAsciiDigit(Decoding.InitialPrompt[^1]));
+    }
+
+    [Fact]
+    public void 初期プロンプトの数字は数える列の10だけ()
+    {
+        // 「9つ」を数字で見せると、数え上げでない語の「いち」「ご」まで数字に寄る(「いちごいちえ」→「151へ」)。
+        // 数字で見せるのは「つ」が付かない短い数(とお)だけにする
+        var digits = new string(Decoding.InitialPrompt.Where(char.IsAsciiDigit).ToArray());
+        Assert.Equal("10", digits);
     }
 
     [Fact]
@@ -27,6 +46,33 @@ public class DecodingTests
         // 長い・内容のあるプロンプトは無音や短い発話でそのまま出てくる(幻聴)種になる。漢字の語は入れない
         Assert.True(Decoding.InitialPrompt.Length <= 32);
         Assert.All(Decoding.InitialPrompt, c => Assert.True(c is >= 'ぁ' and <= 'ゖ' or 'ー' or '、' or '。' or >= '0' and <= '9', $"かな・数字以外: {c}"));
+    }
+
+    // カスタム語彙(keywords)は engine=whisper でも初期プロンプトに表記を足して効かせる(「そくたつ」→「速達」。BLK-transcriber-20261104-1100)
+    [Fact]
+    public void カスタム語彙が空なら初期プロンプトは今までどおり()
+    {
+        Assert.Equal(Decoding.InitialPrompt, Decoding.PromptFor(null));
+        Assert.Equal(Decoding.InitialPrompt, Decoding.PromptFor([]));
+        Assert.Equal(Decoding.InitialPrompt, Decoding.PromptFor(["", "bad=", "a=b=c"])); // 読めない語は渡さない
+    }
+
+    [Fact]
+    public void カスタム語彙の表記を読点でつないで初期プロンプトの前に足し_読みは渡さない()
+    {
+        var p = Decoding.PromptFor(["速達", "Haas = ハース , ハウス", "速達", "議事録"]);
+        Assert.Equal("速達、Haas、議事録、" + Decoding.InitialPrompt, p);
+        Assert.DoesNotContain("ハース", p);
+    }
+
+    [Fact]
+    public void カスタム語彙を足しても数える列の前置きは句点で閉じた形のまま_末尾は言い淀み()
+    {
+        // 語彙を句点で閉じて前に置くと「…ここのつ、とお。」の「とお」が「等」に戻る。語彙と数える列の間は読点
+        var p = Decoding.PromptFor(["速達"]);
+        Assert.DoesNotContain("速達。", p);
+        Assert.Contains("、ここのつ、10。", p);
+        Assert.EndsWith("えっと", p);
     }
 
     [Fact]

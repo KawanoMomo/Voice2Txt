@@ -75,7 +75,7 @@ public sealed class ScenarioAction
     public string? Audio { get; set; }
     public int? Ms { get; set; }
     public int? TimeoutMs { get; set; }
-    /// <summary>キーの名前(System.Windows.Forms.Keys の名前。例 RControlKey, RMenu, C)。キーはトークキーの判定に通す。</summary>
+    /// <summary>キーの名前(System.Windows.Forms.Keys の名前。例 RControlKey, RMenu, C)。キーはトークキーの判定に通す。key の手では「Ctrl+V」のような組み合わせも書ける。</summary>
     public string? Key { get; set; }
     public string? Window { get; set; }
     /// <summary>shot・openSettings・saveSettings の名前(期待の shots と結び付ける)。setSetting では項目のキー(例 talkKey)。</summary>
@@ -155,6 +155,9 @@ public sealed class Expectation
     /// <summary>警告の列(空配列なら警告が無いこと)。</summary>
     public List<string>? Warnings { get; set; }
 
+    /// <summary>holdUntilAudioEnd を待たずに返した理由の列(空配列なら全部の押下が録音になって流し終わりまで押し続けたこと)。</summary>
+    public List<string>? HoldSkips { get; set; }
+
     /// <summary>スクリーンショットが撮れていなければならない状態。</summary>
     public List<string>? Screenshots { get; set; }
 
@@ -170,6 +173,8 @@ public sealed class ShotExpectation
     public string Name { get; set; } = "";
     /// <summary>撮ったときの状態(省略可)。</summary>
     public string? State { get; set; }
+    /// <summary>設定画面の shot: 撮った時点で画面に出ている項目の値(キー → 設定ファイルの形。大文字小文字は区別しない。省略可)。</summary>
+    public Dictionary<string, string>? Values { get; set; }
     /// <summary>音量バーの値(0〜1)の下限・上限(省略可)。</summary>
     public double? MinMeter { get; set; }
     public double? MaxMeter { get; set; }
@@ -197,6 +202,9 @@ public sealed class TextExpectation
 
     /// <summary>届いた文字列に入っていなければならない語(例: 発話の途中に挟まった英文。大文字小文字は問わない)。省略可。</summary>
     public List<string>? Contains { get; set; }
+
+    /// <summary>届いた文字列の終わり(完全一致。例: 言い切った発話は「。」、途中で止めた発話は「、」。発話の繋ぎ目が確定版だけで分かるか)。省略可。</summary>
+    public string? EndsWith { get; set; }
 
     [JsonIgnore] public double Threshold => MinSimilarity ?? 1.0;
 }

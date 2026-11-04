@@ -23,6 +23,10 @@
 3 を採る。`Voice2Txt.Core.Verification.OverlayCapture` が判定し、`OverlayForm.SaveScreenshot` が使う。
 代えたときは capture を `render (overlapped: N% differs from own drawing; above: プロセス名#pid …)` とし、黙って `screen` にしない。
 result の warnings(利用者に知らせた警告)には入れない(並行の有無で台本の期待 `warnings: []` が揺れるため)。
+追記(BLK-owner-20261104-0320-2): 途中経過 3 行が窓の大半を占めると、案内の行が丸ごと別の実行の文言でも全体の食い違いは 1% 程度で閾値を下回った。
+そこで案内の行(`OverlayLayout.RowTop` から下)だけの食い違いも同じ閾値で比べ、さらに z 順で上に同じ製品(同じプロセス名)の窓が重なっていれば画素によらず自前の描画に代える
+(`OverlayCapture.RejectReason`。ログ `capture-check mismatch= row= above=`、理由 `overlapped: hint row N% …` / `overlapped: another Voice2Txt window above`)。
+選択肢 2 の欠点(透明なシステムの重ね合わせ)は、同じ製品の窓に限ることで避ける。
 
 ## 結果
 

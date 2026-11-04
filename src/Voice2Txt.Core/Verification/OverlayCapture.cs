@@ -17,12 +17,15 @@ public static class OverlayCapture
     /// <summary>角丸の縁は 1 画素ずれやすいので、この幅だけ内側で比べる。</summary>
     public const int EdgeInset = 2;
 
-    /// <summary>角丸(半径 <paramref name="radius"/>)の内側の画素のうち、画面(<paramref name="screen"/>)と自前の描画(<paramref name="render"/>)が食い違う割合。画素は ARGB の int を行優先で並べたもの。</summary>
-    public static double MismatchRatio(int[] screen, int[] render, int width, int height, int radius)
+    /// <summary>
+    /// 角丸(半径 <paramref name="radius"/>)の内側の画素のうち、画面(<paramref name="screen"/>)と自前の描画(<paramref name="render"/>)が食い違う割合。画素は ARGB の int を行優先で並べたもの。
+    /// <paramref name="top"/> を渡すと、その y から下(案内の行)だけで比べる。
+    /// </summary>
+    public static double MismatchRatio(int[] screen, int[] render, int width, int height, int radius, int top = 0)
     {
         if (screen.Length < width * height || render.Length < width * height) throw new ArgumentException("画素の数が幅×高さに足りない");
         int compared = 0, differ = 0;
-        for (int y = 0; y < height; y++)
+        for (int y = Math.Max(0, top); y < height; y++)
             for (int x = 0; x < width; x++)
             {
                 if (!InsideRounded(width, height, radius, EdgeInset, x, y)) continue;
@@ -34,6 +37,19 @@ public static class OverlayCapture
 
     /// <summary>画面の写しが自分の表示だと言えるか(食い違いが閾値以下)。</summary>
     public static bool LooksLikeOwn(double mismatchRatio) => mismatchRatio <= MaxMismatchRatio;
+
+    /// <summary>
+    /// 画面の写しを使わない理由(使ってよければ null)。全体の食い違いだけでなく、状態を表す案内の行(<paramref name="hintRow"/>)の食い違いも閾値以下で、
+    /// 上に同じ製品の別の窓(並行実行の別のオーバーレイ。<paramref name="above"/> は上にある窓の "プロセス名#pid")が重なっていないときだけ使う。
+    /// 途中経過が窓の大半を占めると、案内の行が丸ごと別の文言でも全体の割合は閾値を下回るため。
+    /// </summary>
+    public static string? RejectReason(double whole, double hintRow, IReadOnlyList<string> above, string productProcess)
+    {
+        if (!LooksLikeOwn(whole)) return $"overlapped: {whole:P0} differs from own drawing";
+        if (!LooksLikeOwn(hintRow)) return $"overlapped: hint row {hintRow:P0} differs from own drawing";
+        if (above.Any(a => a.StartsWith(productProcess + "#", StringComparison.OrdinalIgnoreCase))) return $"overlapped: another {productProcess} window above";
+        return null;
+    }
 
     public static bool Differs(int a, int b)
     {

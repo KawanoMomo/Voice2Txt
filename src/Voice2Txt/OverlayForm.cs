@@ -18,6 +18,11 @@ internal sealed class OverlayForm : Form
     /// <summary>文言に出すトークキーの名前(検証モードの restart で設定を読み直したときに変える。UI スレッド)。</summary>
     public void SetTalkKeyName(string name) => _talkKeyName = name;
 
+    private bool _toggle;
+
+    /// <summary>押さない録音か(録音中の案内を「{終了キー} で入力」にする。<see cref="SetTalkKeyName"/> には終了キーの組み合わせを渡す。UI スレッド)。</summary>
+    public void SetToggle(bool toggle) => _toggle = toggle;
+
     private readonly System.Windows.Forms.Timer _anim = new() { Interval = 90 };
     private readonly System.Windows.Forms.Timer _hide = new();
     private OverlayView _view = OverlayView.Hidden;
@@ -86,6 +91,7 @@ internal sealed class OverlayForm : Form
         if (!Visible) Show();
         _anim.Enabled = v.State is OverlayState.Recording or OverlayState.ProcessingAndRecording or OverlayState.Processing
             or OverlayState.ModelPreparing or OverlayState.Preparing;
+        if (v.Unavailable) _anim.Enabled = false; // 用意に失敗して終わっている: 回る印で待たせない
         if (v.TransientMs is { } ms) { _hide.Interval = ms; _hide.Start(); }
         Invalidate();
     }
@@ -133,7 +139,7 @@ internal sealed class OverlayForm : Form
 
     private void LayoutFor(OverlayView v)
     {
-        int rowW = IconW + Gap + PartsWidth(v.Parts(_talkKeyName)), tw = 0, th = 0;
+        int rowW = IconW + Gap + PartsWidth(v.Parts(_talkKeyName, _toggle)), tw = 0, th = 0;
         _interimShown = null;
         if (!string.IsNullOrEmpty(v.Interim))
         {
@@ -182,6 +188,9 @@ internal sealed class OverlayForm : Form
                 float s = 10 + 3 * (float)Math.Abs(Math.Sin(_tick * 0.35));
                 using (var b = new SolidBrush(Rec)) g.FillEllipse(b, x + 5 - s / 2, cy - s / 2, s, s);
                 break;
+            case OverlayState.ModelPreparing when v.Unavailable:
+                TextRenderer.DrawText(g, "!", Font, new Point(x + 2, cy - Font.Height / 2), Warn);
+                break;
             case OverlayState.Processing or OverlayState.ModelPreparing:
                 using (var pen = new Pen(Color.White, 2)) g.DrawArc(pen, x, cy - 6, 12, 12, _tick * 40 % 360, 270);
                 break;
@@ -196,8 +205,8 @@ internal sealed class OverlayForm : Form
                 break;
         }
         x += IconW + Gap;
-        // 本文は MOC の並び・色: 地の文は白、補足は灰色、キー名は枠付き、処理待ちは丸いバッジ、音量バーは「録音中」の直後
-        foreach (var p in v.Parts(_talkKeyName))
+        // 本文は MOC の並び・色: 地の文は白、補足は灰色、キー名は枠付き、処理待ちは丸いバッジ、音量バーは「録音中」の直後、持ち越した知らせの件数は注意の色
+        foreach (var p in v.Parts(_talkKeyName, _toggle))
         {
             int pw = PartWidth(p);
             switch (p.Kind)
@@ -220,7 +229,8 @@ internal sealed class OverlayForm : Form
                     break;
                 default:
                     int h = TextRenderer.MeasureText(p.Text, Font, Size.Empty, Flags).Height;
-                    TextRenderer.DrawText(g, p.Text, Font, new Point(x, cy - h / 2), p.Kind == OverlayPartKind.Note ? Muted : Color.White, Flags);
+                    var color = p.Kind switch { OverlayPartKind.Note => Muted, OverlayPartKind.Warn => Warn, _ => Color.White };
+                    TextRenderer.DrawText(g, p.Text, Font, new Point(x, cy - h / 2), color, Flags);
                     break;
             }
             x += pw + Gap;
@@ -257,11 +267,14 @@ internal sealed class OverlayForm : Form
             if (IsUniform(bmp)) reason = "uniform " + bmp.GetPixel(0, 0).Name;
             else
             {
-                double mismatch = OverlayCapture.MismatchRatio(Pixels(bmp), Pixels(own), b.Width, b.Height, Radius);
-                AppLog.Write($"capture-check mismatch={mismatch:0.0000}");
-                if (OverlayCapture.LooksLikeOwn(mismatch)) { bmp.Save(path, ImageFormat.Png); return "screen"; }
+                int[] screenPx = Pixels(bmp), ownPx = Pixels(own);
+                double mismatch = OverlayCapture.MismatchRatio(screenPx, ownPx, b.Width, b.Height, Radius);
+                double row = OverlayCapture.MismatchRatio(screenPx, ownPx, b.Width, b.Height, Radius, _layout.RowTop);
                 var above = WindowsAbove(b);
-                reason = $"overlapped: {mismatch:P0} differs from own drawing; above: {(above.Count == 0 ? "unknown" : string.Join(", ", above))}";
+                AppLog.Write($"capture-check mismatch={mismatch:0.0000} row={row:0.0000} above={above.Count}");
+                var rejected = OverlayCapture.RejectReason(mismatch, row, above, System.Diagnostics.Process.GetCurrentProcess().ProcessName);
+                if (rejected is null) { bmp.Save(path, ImageFormat.Png); return "screen"; }
+                reason = $"{rejected}; above: {(above.Count == 0 ? "unknown" : string.Join(", ", above))}";
             }
         }
         catch (Exception ex) { reason = ex.GetType().Name + ": " + ex.Message; }
