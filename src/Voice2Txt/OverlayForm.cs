@@ -266,11 +266,14 @@ internal sealed class OverlayForm : Form
             if (IsUniform(bmp)) reason = "uniform " + bmp.GetPixel(0, 0).Name;
             else
             {
-                double mismatch = OverlayCapture.MismatchRatio(Pixels(bmp), Pixels(own), b.Width, b.Height, Radius);
-                AppLog.Write($"capture-check mismatch={mismatch:0.0000}");
-                if (OverlayCapture.LooksLikeOwn(mismatch)) { bmp.Save(path, ImageFormat.Png); return "screen"; }
+                int[] screenPx = Pixels(bmp), ownPx = Pixels(own);
+                double mismatch = OverlayCapture.MismatchRatio(screenPx, ownPx, b.Width, b.Height, Radius);
+                double row = OverlayCapture.MismatchRatio(screenPx, ownPx, b.Width, b.Height, Radius, _layout.RowTop);
                 var above = WindowsAbove(b);
-                reason = $"overlapped: {mismatch:P0} differs from own drawing; above: {(above.Count == 0 ? "unknown" : string.Join(", ", above))}";
+                AppLog.Write($"capture-check mismatch={mismatch:0.0000} row={row:0.0000} above={above.Count}");
+                var rejected = OverlayCapture.RejectReason(mismatch, row, above, System.Diagnostics.Process.GetCurrentProcess().ProcessName);
+                if (rejected is null) { bmp.Save(path, ImageFormat.Png); return "screen"; }
+                reason = $"{rejected}; above: {(above.Count == 0 ? "unknown" : string.Join(", ", above))}";
             }
         }
         catch (Exception ex) { reason = ex.GetType().Name + ": " + ex.Message; }
