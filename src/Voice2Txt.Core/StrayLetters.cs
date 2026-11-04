@@ -79,7 +79,8 @@ public static class StrayLetters
     /// <summary>
     /// Haas が「ええと」(エーと)を「aと」と書いた形か。「a と」(英字と「と」の間に空白。「三部a と五分」)か、「aと」が文頭・句読点・空白・前の「aと」の後にあって
     /// 後ろも句読点・空白・文末・次の「aと」のとき(「aと、資料は」「aとaと、」)。「変数aと変数b」「a列とb列」「aとbを」「a と b」は話した語なので残す。
-    /// 「と」の後ろの句読点の向こうが英字・数字(「aと、bの値」「a と、b」)も並べた名前なので残す(「aとaと、」の繰り返しは除く)。
+    /// 「と」の後ろの句読点の向こうが英字(「aと、bの値」「a と、b」)も並べた名前なので残す(「aとaと、」の繰り返しは除く)。
+    /// 句読点の向こうが数字(「aと、 3時」)は言い淀みの後に数を言った形なので取り除く。
     /// </summary>
     private static bool IsEetoSpelling(string s, int i)
     {
@@ -90,14 +91,15 @@ public static class StrayLetters
         int after = t + 1;
         while (after < s.Length && char.IsWhiteSpace(s[after])) after++;
         if (after < s.Length && char.IsAsciiLetterOrDigit(s[after]) && !IsEetoAt(s, after)) return false;
-        // 句読点の向こうも英字・数字なら並べた名前(「aと、bの値」「a と、b」「aと、1の値」)なので残す(IsIsolated と同じ)。
+        // 句読点の向こうが英字なら並べた名前(「aと、bの値」「a と、b」)なので残す。数字(「aと、 3時」)は言い淀みの後に数を言った形なので見ない
+        // (Haas は英字と数を並べた発話「エーと、イチの値」を読点なしの「aと1の値」と書く)。
         // 「aとaと、 3時」のように「aと」が続いた後ろの「aと」は言い淀みの繰り返しなので見ない
         bool repeated = i >= 2 && s[i - 1] == 'と' && s[i - 2] == 'a';
         if (!repeated && after < s.Length && IsMark(s[after]))
         {
             int r = after + 1;
             while (r < s.Length && char.IsWhiteSpace(s[r])) r++;
-            if (r < s.Length && char.IsAsciiLetterOrDigit(s[r]) && !IsEetoAt(s, r)) return false;
+            if (r < s.Length && char.IsAsciiLetter(s[r]) && !IsEetoAt(s, r)) return false;
         }
         if (t > i + 1) return true;
         bool before = i == 0 || char.IsWhiteSpace(s[i - 1]) || IsMark(s[i - 1]) || (i >= 2 && s[i - 1] == 'と' && s[i - 2] == 'a');
