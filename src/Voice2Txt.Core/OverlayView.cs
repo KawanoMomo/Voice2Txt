@@ -21,6 +21,15 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
 {
     public static readonly OverlayView Hidden = new(OverlayState.Hidden);
 
+    /// <summary>
+    /// モデル準備中の表示のうち、用意に失敗して終わっている(再起動まで使えない)もの。本文は <see cref="Detail"/>(使えないことと直し方)をそのまま出し、
+    /// 待たせる語(「準備中」「完了まで」)を出さない。状態の名前(<see cref="Label"/>)も「使えない」にする(ログ・検証モードの結果・スクショ名)。
+    /// </summary>
+    public bool Unavailable { get; init; }
+
+    /// <summary>用意に失敗して再起動まで音声入力ができない状態の名前(CONTEXT.md「使えない」)。</summary>
+    public const string UnavailableLabel = "使えない";
+
     /// <summary>途中経過の欄に収める最大の行数。超えたら頭を削り、末尾(いま話している所)を残す。</summary>
     public const int InterimMaxLines = 3;
 
@@ -38,7 +47,7 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
     }
 
     /// <summary>状態の名前(結果 JSON・スクショのファイル名・Verify の期待に使う)。</summary>
-    public string Label => LabelOf(State);
+    public string Label => State == OverlayState.ModelPreparing && Unavailable ? UnavailableLabel : LabelOf(State);
 
     public static string LabelOf(OverlayState s) => s switch
     {
@@ -67,17 +76,26 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
         _ => null,
     };
 
+    /// <summary>
+    /// モデル準備中・使えないときに押して離した後も、その知らせを出しておくミリ秒(押している間は出し続ける)。
+    /// 使えない理由と直し方は長いので、入力失敗の知らせと同じだけ出す。準備中の進み具合は退避の知らせと同じだけ。
+    /// </summary>
+    public static int ModelNoticeMs(bool unavailable) => unavailable ? 6000 : 4000;
+
     /// <summary>オーバーレイに出す本文(MOC の文言)。</summary>
-    public string Text(string talkKeyName) => State switch
+    /// <param name="talkKeyName">録音を止めるキーの名前(トークキー。押さない録音では終了キーの組み合わせ)。</param>
+    /// <param name="toggle">押さない録音(録音中は「{終了キー} で入力」。押している間だけ録音なら「{トークキー} を離すと入力」)。</param>
+    public string Text(string talkKeyName, bool toggle = false) => State switch
     {
         OverlayState.Preparing => "準備中…  赤い点が出てから話してください",
-        OverlayState.Recording => $"録音中  {talkKeyName} を離すと入力",
+        OverlayState.Recording => $"録音中  {talkKeyName} {StopVerb(toggle)}",
         OverlayState.Processing => "文字起こし中…",
         OverlayState.ProcessingAndRecording => $"録音中  処理待ち {PendingCount}件",
         OverlayState.Pasted => "入力しました",
         OverlayState.Evacuated => "ウィンドウが変わったため貼り付けませんでした — Ctrl+V で貼れます",
         OverlayState.CancelledSilence => "音声が検出されませんでした",
         OverlayState.Cancelled => $"取り消しました({Detail ?? "押す時間が短すぎます"})",
+        OverlayState.ModelPreparing when Unavailable => Detail ?? "モデルを用意できないため音声入力は使えません",
         OverlayState.ModelPreparing => $"モデル準備中{(Detail is null ? "" : $"({Detail})")} — 完了まで音声入力は使えません",
         OverlayState.DeliveryFailed => "他のアプリがクリップボードを使用中のため入力できませんでした — もう一度話してください",
         _ => "",
@@ -87,15 +105,17 @@ public sealed record OverlayView(OverlayState State, int PendingCount = 0, strin
     /// 本文を MOC の並び・色で描くための部品列(状態の印 ●・✓・! の後ろに左から並べる)。
     /// 部品の文字をつなぐと(空白を除いて)<see cref="Text"/> と同じになる。音量バーは文字を持たない。
     /// </summary>
-    public IReadOnlyList<OverlayPart> Parts(string talkKeyName) => State switch
+    public IReadOnlyList<OverlayPart> Parts(string talkKeyName, bool toggle = false) => State switch
     {
         OverlayState.Preparing => [new(OverlayPartKind.Text, "準備中…"), new(OverlayPartKind.Note, "赤い点が出てから話してください")],
-        OverlayState.Recording => [new(OverlayPartKind.Text, "録音中"), OverlayPart.Meter, new(OverlayPartKind.Key, talkKeyName), new(OverlayPartKind.Text, "を離すと入力")],
+        OverlayState.Recording => [new(OverlayPartKind.Text, "録音中"), OverlayPart.Meter, new(OverlayPartKind.Key, talkKeyName), new(OverlayPartKind.Text, StopVerb(toggle))],
         OverlayState.ProcessingAndRecording => [new(OverlayPartKind.Text, "録音中"), OverlayPart.Meter, new(OverlayPartKind.Badge, $"処理待ち {PendingCount}件")],
         OverlayState.Evacuated => [new(OverlayPartKind.Text, "ウィンドウが変わったため貼り付けませんでした —"), new(OverlayPartKind.Key, "Ctrl+V"), new(OverlayPartKind.Text, "で貼れます")],
         OverlayState.Hidden => [],
-        _ => [new(OverlayPartKind.Text, Text(talkKeyName))],
+        _ => [new(OverlayPartKind.Text, Text(talkKeyName, toggle))],
     };
+
+    private static string StopVerb(bool toggle) => toggle ? "で入力" : "を離すと入力";
 }
 
 /// <summary>オーバーレイの本文の部品の種類(MOC の CSS に対応)。</summary>

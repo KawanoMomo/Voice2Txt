@@ -316,7 +316,128 @@ public class PushToTalkControllerTests
         await r.Idle();
         Assert.Equal(CancelReason.ModelNotReady, Assert.Single(r.Reports).Reason);
         Assert.Equal(0, r.Engine.Calls);
+        // 離した後もしばらく知らせを出しておく(押している間と同じ表示)
+        Assert.Equal(new OverlayView(OverlayState.ModelPreparing, 0, "ダウンロード 42%"), r.Ptt.CurrentView);
+    }
+
+    private static async Task<bool> Until(Func<bool> cond, int ms = 3000)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < ms) { if (cond()) return true; await Task.Delay(5); }
+        return cond();
+    }
+
+    [Fact]
+    public async Task モデル準備中に押して離すと_知らせは離した後も残り_時間で消える()
+    {
+        await using var r = new Rig(new PttOptions(ModelNoticeMs: 300), modelReady: false);
+        r.Ptt.SetModelStatus(false, "ダウンロード 46%");
+        r.Ptt.OnTalkKeyDown();
+        var held = r.Ptt.CurrentView;
+        r.Ptt.OnTalkKeyUp();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Equal(held, r.Ptt.CurrentView);
+        Assert.Equal("モデル準備中", r.Ptt.CurrentView.Label);
+        Assert.Equal(CancelReason.ModelNotReady, Assert.Single(r.Reports).Reason);
+        Assert.True(await r.Ptt.WaitIdleAsync(TimeSpan.FromSeconds(1))); // 残している間も待ちにはしない
+        // 進み具合は残している間も変わる
+        r.Ptt.SetModelStatus(false, "ダウンロード 47%");
+        Assert.Equal(new OverlayView(OverlayState.ModelPreparing, 0, "ダウンロード 47%"), r.Ptt.CurrentView);
+        Assert.True(await Until(() => r.Ptt.CurrentView.State == OverlayState.Hidden));
+        Assert.True(sw.ElapsedMilliseconds >= 250, $"消えるまで {sw.ElapsedMilliseconds} ms");
+        Assert.Equal(0, r.Engine.Calls);
+    }
+
+    [Fact]
+    public async Task 使えないときに押して離すと_理由と直し方は離した後も残り_時間で消える()
+    {
+        await using var r = new Rig(new PttOptions(ModelNoticeMs: 300), modelReady: false);
+        r.Ptt.SetModelFailed(Engines.FailedOverlayText("haas"));
+        r.Ptt.OnTalkKeyDown();
+        var held = r.Ptt.CurrentView;
+        r.Ptt.OnTalkKeyUp();
+        var after = r.Ptt.CurrentView;
+        Assert.Equal(held, after);
+        Assert.True(after.Unavailable);
+        Assert.Equal("使えない", after.Label);
+        Assert.Contains("再起動してください", after.Text("右Ctrl"));
+        Assert.True(await Until(() => r.Ptt.CurrentView.State == OverlayState.Hidden));
+    }
+
+    [Fact]
+    public async Task 残している間に用意ができたら_知らせはすぐ消え_押せば録音する()
+    {
+        await using var r = new Rig(new PttOptions(ModelNoticeMs: 60_000), modelReady: false);
+        r.Ptt.OnTalkKeyDown();
+        r.Ptt.OnTalkKeyUp();
+        Assert.Equal(OverlayState.ModelPreparing, r.Ptt.CurrentView.State);
+        r.Ptt.SetModelStatus(true);
         Assert.Equal(OverlayState.Hidden, r.Ptt.CurrentView.State);
+        r.Utter(1000);
+        await r.Idle();
+        Assert.Equal(Outcome.Pasted, r.Reports[^1].Outcome);
+    }
+
+    [Fact]
+    public async Task 残している間に押し直すと_古い時計では消えない()
+    {
+        await using var r = new Rig(new PttOptions(ModelNoticeMs: 200), modelReady: false);
+        r.Ptt.OnTalkKeyDown();
+        r.Ptt.OnTalkKeyUp();
+        await Task.Delay(120);
+        r.Ptt.OnTalkKeyDown(); // 押し直す(まだ準備中)
+        await Task.Delay(150);  // 1 回目の時計が切れる
+        Assert.Equal(OverlayState.ModelPreparing, r.Ptt.CurrentView.State); // 押している間は出したまま
+        r.Ptt.OnTalkKeyUp();
+        Assert.Equal(OverlayState.ModelPreparing, r.Ptt.CurrentView.State);
+        Assert.True(await Until(() => r.Ptt.CurrentView.State == OverlayState.Hidden));
+        Assert.Equal(2, r.Reports.Count(x => x.Reason == CancelReason.ModelNotReady));
+    }
+
+    [Fact]
+    public void 離した後に残す時間の既定は_使えないの方が長い()
+    {
+        Assert.Equal(4000, OverlayView.ModelNoticeMs(false));
+        Assert.Equal(6000, OverlayView.ModelNoticeMs(true));
+        Assert.Null(PttOptions.From(new AppSettings()).ModelNoticeMs);
+    }
+
+    [Theory]
+    [InlineData("haas", "設定のエンジンを Whisper に戻すか、取得できる状態にして再起動してください")]
+    [InlineData("whisper", "取得できる状態にして再起動してください")]
+    public async Task 用意に失敗した後に押すと_待たせず使えないことと直し方を出し_録音しない(string engine, string fix)
+    {
+        await using var r = new Rig(modelReady: false);
+        r.Ptt.SetModelStatus(false, "ダウンロード 42%");
+        r.Ptt.SetModelFailed(Engines.FailedOverlayText(engine));
+        r.Ptt.OnTalkKeyDown();
+        var v = r.Ptt.CurrentView;
+        Assert.Equal(OverlayState.ModelPreparing, v.State);
+        Assert.True(v.Unavailable);
+        Assert.Equal("使えない", v.Label); // ログ・検証モードの結果・スクショ名も「準備中」と読ませない
+        var text = v.Text("右Ctrl");
+        Assert.DoesNotContain("準備中", text);
+        Assert.DoesNotContain("完了まで", text);
+        Assert.Contains("音声入力は使えません", text);
+        Assert.Contains(fix, text);
+        r.Clock.NowMs += 1000;
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
+        Assert.Equal(CancelReason.ModelNotReady, Assert.Single(r.Reports).Reason);
+        Assert.Equal(0, r.Engine.Calls);
+    }
+
+    [Fact]
+    public async Task 用意し直して進み具合が届けば_準備中の表示に戻る()
+    {
+        await using var r = new Rig(modelReady: false);
+        r.Ptt.SetModelFailed(Engines.FailedOverlayText("haas"));
+        r.Ptt.SetModelStatus(false, "ダウンロード 10%");
+        r.Ptt.OnTalkKeyDown();
+        Assert.Equal(new OverlayView(OverlayState.ModelPreparing, 0, "ダウンロード 10%"), r.Ptt.CurrentView);
+        Assert.Contains("完了まで", r.Ptt.CurrentView.Text("右Ctrl"));
+        r.Ptt.OnTalkKeyUp();
+        await r.Idle();
     }
 
     [Fact]

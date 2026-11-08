@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Drawing.Imaging;
 using Voice2Txt.Core;
+using Voice2Txt.Core.Verification;
 
 namespace Voice2Txt;
 
@@ -158,12 +160,114 @@ internal sealed class SettingsForm : Form
         return _error.Text.Length > 0 ? _error.Text : null;
     }
 
-    /// <summary>画面の今の姿(検証モードのスクショ)。フォーカスや重なりに左右されないよう自前で描く。</summary>
-    public void SaveScreenshot(string path)
+    /// <summary>
+    /// 画面の今の姿(検証モードのスクショ)。フォーカスや重なりに左右されないよう部品に自分を描かせる(render)。
+    /// 選択式の項目の値が欄に写らなければ、描き直させ、それでも写らなければ画面から写す。画面にも写らなければ値を書き足し、そのことを capture に残す。
+    /// </summary>
+    public SettingsShot SaveScreenshot(string path)
     {
-        using var bmp = new Bitmap(Width, Height);
+        // 撮った時点で画面に出ている各項目の値(設定ファイルの形)と、選択式の項目の文字の欄(画の座標)
+        var values = SettingsSchema.Items.ToDictionary(i => i.Key, i => ValueOf(_inputs[i.Key]), StringComparer.Ordinal);
+        var fields = _inputs.Where(kv => kv.Value is ComboBox).Select(kv => Field(kv.Key, (ComboBox)kv.Value)).ToList();
+
+        // 1. 部品に自分を描かせる(render)。選択式の欄が空なら、部品を描き直させてもう一度
+        var render = Render();
+        var renderBlank = SettingsCapture.BlankFields(Pixels(render), render.Width, fields);
+        if (renderBlank.Count > 0)
+        {
+            foreach (var cb in _inputs.Values.OfType<ComboBox>()) { cb.Invalidate(); cb.Update(); }
+            render.Dispose();
+            render = Render();
+            renderBlank = SettingsCapture.BlankFields(Pixels(render), render.Width, fields);
+        }
+        try
+        {
+            if (renderBlank.Count == 0)
+            {
+                render.Save(path, ImageFormat.Png);
+                return new(SettingsCapture.Describe("render", [], [], null), values, []);
+            }
+            // 2. 空欄の部品だけを画面から写して差し込む(その部品の上に別の窓が重なっていないときだけ。利用者に見えているもの)
+            var fromScreen = new List<string>();
+            var notes = new List<string>();
+            using (var g = Graphics.FromImage(render))
+                foreach (var key in renderBlank)
+                {
+                    var cb = (ComboBox)_inputs[key];
+                    var why = CopyFromScreen(cb, g);
+                    if (why is null) fromScreen.Add(key); else notes.Add($"{key} {why}");
+                }
+            // 3. 画面にも写らない: 部品の値を欄に書き足して残し、書き足したことを capture と filled に残す(黙って写ったことにしない)
+            var filled = renderBlank.Except(fromScreen).ToList();
+            using (var g = Graphics.FromImage(render))
+                foreach (var f in fields.Where(f => filled.Contains(f.Key)))
+                {
+                    var cb = (ComboBox)_inputs[f.Key];
+                    TextRenderer.DrawText(g, f.Text, cb.Font, new Rectangle(f.X, f.Y, f.W, f.H), cb.ForeColor, cb.BackColor,
+                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+                }
+            render.Save(path, ImageFormat.Png);
+            if (fromScreen.Count > 0) notes.Insert(0, "from screen: " + string.Join(",", fromScreen));
+            return new(SettingsCapture.Describe("render", renderBlank, filled, notes.Count == 0 ? null : string.Join("; ", notes)), values, filled);
+        }
+        finally { render.Dispose(); }
+    }
+
+    private Bitmap Render()
+    {
+        var bmp = new Bitmap(Width, Height, PixelFormat.Format32bppArgb);
         DrawToBitmap(bmp, new Rectangle(Point.Empty, Size));
-        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        return bmp;
+    }
+
+    /// <summary>
+    /// 部品 <paramref name="cb"/> を画面から写し、値が写っていれば render の同じ位置へ描き込む(null)。部品の上に別の窓が重なっている・写っていなければ理由。
+    /// </summary>
+    private string? CopyFromScreen(ComboBox cb, Graphics into)
+    {
+        try
+        {
+            Native.DwmFlush();
+            var r = cb.RectangleToScreen(cb.ClientRectangle);
+            foreach (var pt in new[] { new Point(r.X + 4, r.Y + r.Height / 2), new Point(r.X + r.Width / 2, r.Y + r.Height / 2), new Point(r.Right - 4, r.Y + r.Height / 2) })
+                if (Native.WindowFromPoint(new Native.POINT { X = pt.X, Y = pt.Y }) != cb.Handle) return "overlapped on screen";
+            using var bmp = new Bitmap(r.Width, r.Height, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                nint dst = g.GetHdc(), src = Native.GetDC(0);
+                try { if (!Native.BitBlt(dst, 0, 0, r.Width, r.Height, src, r.X, r.Y, Native.SRCCOPY | Native.CAPTUREBLT)) return "BitBlt failed"; }
+                finally { Native.ReleaseDC(0, src); g.ReleaseHdc(dst); }
+            }
+            int inset = 3, arrow = SystemInformation.VerticalScrollBarWidth + 2;
+            if (!SettingsCapture.HasInk(Pixels(bmp), bmp.Width, inset, 2, bmp.Width - inset - arrow, bmp.Height - 4)) return "blank on screen too";
+            into.DrawImageUnscaled(bmp, r.X - Bounds.X, r.Y - Bounds.Y);
+            return null;
+        }
+        catch (Exception ex) { return ex.GetType().Name; }
+    }
+
+    /// <summary>選択式の部品の文字の欄(枠と▼を除いた内側。上の欄で見えない所は除く)を、窓全体の画の座標で。</summary>
+    private (string Key, string Text, int X, int Y, int W, int H) Field(string key, ComboBox cb)
+    {
+        var r = cb.RectangleToScreen(cb.ClientRectangle);
+        for (Control? p = cb.Parent; p is not null && p != this; p = p.Parent) r.Intersect(p.RectangleToScreen(p.ClientRectangle));
+        r.Intersect(RectangleToScreen(ClientRectangle));
+        var inner = cb.RectangleToScreen(new Rectangle(3, 2, Math.Max(0, cb.ClientSize.Width - 3 - SystemInformation.VerticalScrollBarWidth - 2), Math.Max(0, cb.ClientSize.Height - 4)));
+        inner.Intersect(r);
+        return (key, cb.Text, inner.X - Bounds.X, inner.Y - Bounds.Y, inner.Width, inner.Height);
+    }
+
+    private static int[] Pixels(Bitmap bmp)
+    {
+        var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            var px = new int[bmp.Width * bmp.Height];
+            for (int y = 0; y < bmp.Height; y++)
+                System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + y * data.Stride, px, y * bmp.Width, bmp.Width);
+            return px;
+        }
+        finally { bmp.UnlockBits(data); }
     }
 
     private void Save()
@@ -183,3 +287,6 @@ internal sealed class SettingsForm : Form
         Close();
     }
 }
+
+/// <summary>検証モードが撮った設定画面: 結果の capture(写し方と注記)、撮った時点で画面に出ている各項目の値(設定ファイルの形)、値が写らず書き足した項目。</summary>
+internal sealed record SettingsShot(string Capture, Dictionary<string, string> Values, List<string> Filled);

@@ -9,12 +9,54 @@ public class SettingsSchemaTests
     public void 設定ファイルの全項目が画面に名前と説明付きで並ぶ()
     {
         var keys = SettingsSchema.Items.Select(i => i.Key).ToList();
-        Assert.Equal(["talkKey", "engine", "model","backend", "preferSpeed", "delivery", "minPressSeconds", "silenceThreshold", "showInterim", "removeFillers", "fillers", "keywords", "fetchCudaRuntime", "autoStart"], keys);
+        Assert.Equal(["talkKey", "recordMode", "startKey", "stopKey", "engine", "model","backend", "preferSpeed", "delivery", "minPressSeconds", "silenceThreshold", "showInterim", "removeFillers", "fillers", "keywords", "fetchCudaRuntime", "autoStart"], keys);
         // settings.json に書かれるキーと一致する(画面に無い設定項目を作らない)
         var json = System.Text.Json.JsonSerializer.Serialize(new AppSettings(), AppSettings.Json);
         var fileKeys = System.Text.Json.JsonDocument.Parse(json).RootElement.EnumerateObject().Select(p => p.Name).ToList();
         Assert.Equal(fileKeys.OrderBy(x => x), keys.OrderBy(x => x));
         Assert.All(SettingsSchema.Items, i => { Assert.NotEmpty(i.Label); Assert.NotEmpty(i.Description); });
+    }
+
+    [Fact]
+    public void エンジンの説明は_用意できないとき押せばオーバーレイにも理由と直し方が出ると書く()
+    {
+        var d = SettingsSchema.Items.Single(i => i.Key == "engine").Description;
+        Assert.Contains("トレイに出します", d);
+        Assert.Contains("オーバーレイにも理由と直し方が出ます", d);
+    }
+
+    [Theory]
+    [InlineData("model", "モデル", "Whisper")]
+    [InlineData("preferSpeed", "速さを優先する", "Whisper")]
+    [InlineData("fetchCudaRuntime", "CUDA を取得する", "Whisper")]
+    public void 片方のエンジンでだけ効く項目は名前に括弧を付けず_説明の先頭で同じ形に示す(string key, string label, string engine)
+    {
+        var item = SettingsSchema.Get(key);
+        Assert.Equal(label, item.Label);
+        Assert.StartsWith($"エンジンが {engine} のときだけ使います。", item.Description);
+    }
+
+    [Fact]
+    public void カスタム語彙はどちらのエンジンでも効き_読みはHaasのときだけと同じ形で示す()
+    {
+        var item = SettingsSchema.Get("keywords");
+        Assert.Equal("カスタム語彙", item.Label);
+        Assert.DoesNotContain("エンジンが Haas のときだけ使います。固有", item.Description);
+        Assert.Contains("どちらのエンジンでも効きます", item.Description);
+        Assert.Contains("読みが効くのはエンジンが Haas のときで、Whisper は表記だけを使います", item.Description);
+    }
+
+    [Fact]
+    public void エンジン限定の示し方は1つだけ_名前の括弧や説明の末尾では示さない()
+    {
+        foreach (var i in SettingsSchema.Items)
+        {
+            Assert.DoesNotContain("(Haas)", i.Label);
+            Assert.DoesNotContain("(Whisper)", i.Label);
+            Assert.DoesNotContain("では使いません", i.Description);
+            int at = i.Description.IndexOf("のときだけ使います", StringComparison.Ordinal);
+            Assert.True(at < 0 || i.Description.StartsWith("エンジンが "), $"{i.Key}: 説明の途中で限定を示している");
+        }
     }
 
     [Fact]
