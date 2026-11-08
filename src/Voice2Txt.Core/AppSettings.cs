@@ -43,7 +43,7 @@ public sealed class AppSettings
     public List<string> Fillers { get; set; } = [.. Core.Fillers.DefaultWords];
 
     /// <summary>
-    /// カスタム語彙(どちらのエンジンでも。haas は speech.cpp の keywords、whisper は表記を初期プロンプトに足す(<see cref="Decoding.PromptFor"/>))。
+    /// カスタム語彙(どちらのエンジンでも。haas は speech.cpp の keywords、whisper は表記を初期プロンプトに足し(<see cref="Decoding.PromptFor"/>)、復号を表記へ寄せる(<see cref="KeywordBias"/>))。
     /// 1 つの語は「表記」か「表記=読み,読み」(例 Haas=ハース。読みは haas だけが使う)。
     /// 空なら渡さない。読めない語は渡さずに知らせる(<see cref="HaasKeywords"/>)。
     /// </summary>
